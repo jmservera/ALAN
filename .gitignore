@@ -16,6 +16,7 @@ obj/
 # User secrets
 appsettings.Development.json
 secrets.json
+.env
 
 # Docker
 .dockerignore

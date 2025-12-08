@@ -117,12 +117,12 @@ Example:
             // Try to parse as JSON
             var actionPlan = JsonSerializer.Deserialize<ActionPlan>(response);
             
-            if (actionPlan != null)
+            if (actionPlan != null && !string.IsNullOrEmpty(actionPlan.Action))
             {
                 var action = new AgentAction
                 {
                     Name = "ExecutePlan",
-                    Description = actionPlan.Action ?? "Unknown action",
+                    Description = actionPlan.Action,
                     Input = actionPlan.Reasoning ?? "",
                     Status = ActionStatus.Running
                 };

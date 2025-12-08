@@ -84,6 +84,10 @@
 @section Scripts {
     <script>
         let connection = null;
+        let isPolling = false;
+        let pollingActive = false;
+        const seenThoughts = new Set();
+        const seenActions = new Set();
         
         function handleSignalRLoadError() {
             console.warn('SignalR CDN not available, using polling fallback');
@@ -92,29 +96,53 @@
             startPolling();
         }
         
-        function startPolling() {
-            // Poll for updates every 5 seconds
-            setInterval(async () => {
-                try {
-                    const response = await fetch('/api/state');
-                    if (response.ok) {
-                        const state = await response.json();
-                        updateAgentStatus(state);
-                        
-                        // Add any new thoughts
-                        if (state.recentThoughts && state.recentThoughts.length > 0) {
-                            state.recentThoughts.forEach(thought => addThought(thought));
-                        }
-                        
-                        // Add any new actions
-                        if (state.recentActions && state.recentActions.length > 0) {
-                            state.recentActions.forEach(action => addAction(action));
-                        }
+        async function pollOnce() {
+            if (!pollingActive || isPolling) return;
+            
+            isPolling = true;
+            try {
+                const response = await fetch('/api/state');
+                if (response.ok) {
+                    const state = await response.json();
+                    updateAgentStatus(state);
+                    
+                    // Add only new thoughts
+                    if (state.recentThoughts && state.recentThoughts.length > 0) {
+                        state.recentThoughts.forEach(thought => {
+                            if (!seenThoughts.has(thought.id)) {
+                                addThought(thought);
+                                seenThoughts.add(thought.id);
+                            }
+                        });
                     }
-                } catch (error) {
-                    console.error('Polling error:', error);
+                    
+                    // Add only new actions
+                    if (state.recentActions && state.recentActions.length > 0) {
+                        state.recentActions.forEach(action => {
+                            if (!seenActions.has(action.id)) {
+                                addAction(action);
+                                seenActions.add(action.id);
+                            }
+                        });
+                    }
                 }
-            }, 5000);
+            } catch (error) {
+                console.error('Polling error:', error);
+            } finally {
+                isPolling = false;
+                if (pollingActive) {
+                    setTimeout(pollOnce, 5000);
+                }
+            }
+        }
+        
+        function startPolling() {
+            pollingActive = true;
+            pollOnce();
+        }
+        
+        function stopPolling() {
+            pollingActive = false;
         }
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.14/signalr.min.js" 

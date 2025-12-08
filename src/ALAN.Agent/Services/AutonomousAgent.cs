@@ -1,4 +1,5 @@
 using ALAN.Shared.Models;
+using ALAN.Agent.Services.Memory;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
@@ -13,17 +14,36 @@ public class AutonomousAgent
     private readonly ILogger<AutonomousAgent> _logger;
     private readonly StateManager _stateManager;
     private readonly UsageTracker _usageTracker;
+    private readonly ILongTermMemoryService _longTermMemory;
+    private readonly IShortTermMemoryService _shortTermMemory;
+    private readonly BatchLearningService _batchLearningService;
+    private readonly HumanInputHandler _humanInputHandler;
     private bool _isRunning;
+    private bool _isPaused;
     private string _currentPrompt = "You are an autonomous AI agent. Think about interesting things and take actions to learn and explore.";
     private int _consecutiveThrottles = 0;
+    private int _iterationCount = 0;
 
-    public AutonomousAgent(AIAgent agent, ILogger<AutonomousAgent> logger, StateManager stateManager, UsageTracker usageTracker)
+    public AutonomousAgent(
+        AIAgent agent,
+        ILogger<AutonomousAgent> logger,
+        StateManager stateManager,
+        UsageTracker usageTracker,
+        ILongTermMemoryService longTermMemory,
+        IShortTermMemoryService shortTermMemory,
+        BatchLearningService batchLearningService,
+        HumanInputHandler humanInputHandler)
     {
         _agent = agent;
         _thread = agent.GetNewThread();
         _logger = logger;
         _stateManager = stateManager;
         _usageTracker = usageTracker;
+        _longTermMemory = longTermMemory;
+        _shortTermMemory = shortTermMemory;
+        _batchLearningService = batchLearningService;
+        _humanInputHandler = humanInputHandler;
+        _humanInputHandler.SetAgent(this);
     }
 
     public void UpdatePrompt(string prompt)
@@ -31,6 +51,20 @@ public class AutonomousAgent
         _currentPrompt = prompt;
         _stateManager.UpdatePrompt(prompt);
         _logger.LogInformation("Prompt updated: {Prompt}", prompt);
+    }
+
+    public void Pause()
+    {
+        _isPaused = true;
+        _stateManager.UpdateStatus(AgentStatus.Paused);
+        _logger.LogInformation("Agent paused");
+    }
+
+    public void Resume()
+    {
+        _isPaused = false;
+        _stateManager.UpdateStatus(AgentStatus.Idle);
+        _logger.LogInformation("Agent resumed");
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -46,6 +80,26 @@ public class AutonomousAgent
         {
             try
             {
+                // Process human inputs first
+                await _humanInputHandler.ProcessPendingInputsAsync(this, cancellationToken);
+
+                // Check if paused
+                if (_isPaused)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                    continue;
+                }
+
+                // Check if we should run batch learning
+                if (_batchLearningService.ShouldRunBatch(_iterationCount))
+                {
+                    _logger.LogInformation("Pausing agent loop for batch learning");
+                    _stateManager.UpdateStatus(AgentStatus.Paused);
+                    await _batchLearningService.RunBatchLearningAsync(cancellationToken);
+                    _iterationCount = 0; // Reset iteration counter
+                    _logger.LogInformation("Batch learning complete, resuming agent loop");
+                }
+
                 // Check if we can execute another loop
                 if (!_usageTracker.CanExecuteLoop(out var reason))
                 {
@@ -68,6 +122,7 @@ public class AutonomousAgent
 
                 // Record the loop execution
                 _usageTracker.RecordLoop(estimatedTokens: 2000);
+                _iterationCount++;
 
                 await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
             }
@@ -93,6 +148,9 @@ public class AutonomousAgent
     {
         _stateManager.UpdateStatus(AgentStatus.Thinking);
 
+        // Store current time to short-term memory
+        await _shortTermMemory.SetAsync("last_think_time", DateTime.UtcNow, TimeSpan.FromHours(1), cancellationToken);
+
         // Record observation
         var observation = new AgentThought
         {
@@ -101,6 +159,17 @@ public class AutonomousAgent
         };
         _stateManager.AddThought(observation);
         _logger.LogInformation("Agent observed: {Content}", observation.Content);
+
+        // Store observation to long-term memory
+        var observationMemory = new MemoryEntry
+        {
+            Type = MemoryType.Observation,
+            Content = observation.Content,
+            Summary = "Agent observation",
+            Importance = 0.3,
+            Tags = new List<string> { "observation", "system" }
+        };
+        await _longTermMemory.StoreMemoryAsync(observationMemory, cancellationToken);
 
         // Get AI response
         var prompt = $@"You are an autonomous agent. Your current directive is: {_currentPrompt}
@@ -133,12 +202,34 @@ Example:
             _stateManager.AddThought(reasoning);
             _logger.LogInformation("Agent reasoning: {Content}", response);
 
+            // Store reasoning to long-term memory
+            var reasoningMemory = new MemoryEntry
+            {
+                Type = MemoryType.Decision,
+                Content = response,
+                Summary = "Agent reasoning and decision",
+                Importance = 0.6,
+                Tags = new List<string> { "reasoning", "decision" }
+            };
+            await _longTermMemory.StoreMemoryAsync(reasoningMemory, cancellationToken);
+
             // Parse and execute action
             await ParseAndExecuteActionAsync(response, cancellationToken);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during thinking process");
+            
+            // Store error to long-term memory
+            var errorMemory = new MemoryEntry
+            {
+                Type = MemoryType.Error,
+                Content = $"Error during thinking: {ex.Message}",
+                Summary = "Agent error",
+                Importance = 0.7,
+                Tags = new List<string> { "error", "system" }
+            };
+            await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
         }
     }
 
@@ -172,6 +263,17 @@ Example:
                 _stateManager.UpdateAction(action);
 
                 _logger.LogInformation("Action completed: {Description}", action.Description);
+
+                // Store successful action to long-term memory
+                var actionMemory = new MemoryEntry
+                {
+                    Type = MemoryType.Success,
+                    Content = $"Action: {action.Description}\nResult: {action.Output}",
+                    Summary = action.Name,
+                    Importance = 0.5,
+                    Tags = new List<string> { "action", "success" }
+                };
+                await _longTermMemory.StoreMemoryAsync(actionMemory, cancellationToken);
             }
         }
         catch (JsonException)

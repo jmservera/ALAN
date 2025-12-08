@@ -1,4 +1,6 @@
 using ALAN.Agent.Services;
+using ALAN.Agent.Services.Memory;
+using ALAN.Agent.Plugins;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -21,6 +23,15 @@ builder.Logging.SetMinimumLevel(Enum.Parse<LogLevel>(logLevel));
 
 // Register services
 builder.Services.AddSingleton<StateManager>();
+builder.Services.AddSingleton<HumanInputHandler>();
+
+// Register memory services
+builder.Services.AddSingleton<ILongTermMemoryService, InMemoryLongTermMemoryService>();
+builder.Services.AddSingleton<IShortTermMemoryService, InMemoryShortTermMemoryService>();
+
+// Register consolidation service (requires AIAgent, so it's registered after)
+builder.Services.AddSingleton<IMemoryConsolidationService, MemoryConsolidationService>();
+builder.Services.AddSingleton<BatchLearningService>();
 
 // Configure and register UsageTracker
 var maxLoopsPerDay = int.TryParse(
@@ -62,11 +73,14 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     if (!string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey))
     {
         var azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
-        return azureClient
-                .GetChatClient(deploymentName)
-                .CreateAIAgent(instructions: "You are an autonomous AI agent. Think about interesting things and take actions to learn and explore.",
-                            name: "ALAN Agent");
-
+        var chatClient = azureClient.GetChatClient(deploymentName);
+        
+        // Create AIAgent
+        var agent = chatClient.CreateAIAgent(
+            instructions: "You are an autonomous AI agent. Think about interesting things and take actions to learn and explore.",
+            name: "ALAN Agent");
+        
+        return agent;
     }
     else
     {

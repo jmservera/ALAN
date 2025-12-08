@@ -1,4 +1,5 @@
 using ALAN.Agent.Services;
+using ALAN.Agent.Services.Memory;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.AI;
@@ -13,6 +14,10 @@ public class AgentHostedService : BackgroundService
     private readonly AIAgent _aiAgent;
     private readonly StateManager _stateManager;
     private readonly UsageTracker _usageTracker;
+    private readonly ILongTermMemoryService _longTermMemory;
+    private readonly IShortTermMemoryService _shortTermMemory;
+    private readonly BatchLearningService _batchLearningService;
+    private readonly HumanInputHandler _humanInputHandler;
     private AutonomousAgent? _agent;
 
     public AgentHostedService(
@@ -20,23 +25,36 @@ public class AgentHostedService : BackgroundService
         ILoggerFactory loggerFactory,
         AIAgent aiAgent,
         StateManager stateManager,
-        UsageTracker usageTracker)
+        UsageTracker usageTracker,
+        ILongTermMemoryService longTermMemory,
+        IShortTermMemoryService shortTermMemory,
+        BatchLearningService batchLearningService,
+        HumanInputHandler humanInputHandler)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
         _aiAgent = aiAgent;
         _stateManager = stateManager;
         _usageTracker = usageTracker;
+        _longTermMemory = longTermMemory;
+        _shortTermMemory = shortTermMemory;
+        _batchLearningService = batchLearningService;
+        _humanInputHandler = humanInputHandler;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Agent Hosted Service starting...");
 
-        _agent = new AutonomousAgent(_aiAgent,
+        _agent = new AutonomousAgent(
+            _aiAgent,
             _loggerFactory.CreateLogger<AutonomousAgent>(),
             _stateManager,
-            _usageTracker);
+            _usageTracker,
+            _longTermMemory,
+            _shortTermMemory,
+            _batchLearningService,
+            _humanInputHandler);
 
         try
         {

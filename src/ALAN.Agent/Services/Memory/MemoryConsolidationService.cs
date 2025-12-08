@@ -134,7 +134,7 @@ Respond with ONLY a JSON object in this format:
         return learnings;
     }
 
-    public Task<bool> StoreLearningAsync(ConsolidatedLearning learning, CancellationToken cancellationToken = default)
+    public async Task<bool> StoreLearningAsync(ConsolidatedLearning learning, CancellationToken cancellationToken = default)
     {
         _learnings.Add(learning);
         _logger.LogInformation("Stored learning {Id} on topic {Topic}", learning.Id, learning.Topic);
@@ -154,9 +154,17 @@ Respond with ONLY a JSON object in this format:
             Tags = new List<string> { "learning", learning.Topic }
         };
 
-        _ = _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
+        // Store memory asynchronously with error handling
+        try
+        {
+            await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to store learning memory for {LearningId}", learning.Id);
+        }
         
-        return Task.FromResult(true);
+        return true;
     }
 
     public async Task<List<MemoryEntry>> IdentifyOutdatedMemoriesAsync(CancellationToken cancellationToken = default)

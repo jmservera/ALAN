@@ -149,7 +149,11 @@ Example:
         try
         {
             // Try to parse as JSON
-            var actionPlan = JsonSerializer.Deserialize<ActionPlan>(response);
+            var jsonOptions = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            var actionPlan = JsonSerializer.Deserialize<ActionPlan>(response, jsonOptions);
 
             if (actionPlan != null && !string.IsNullOrEmpty(actionPlan.Action))
             {
@@ -165,7 +169,28 @@ Example:
                 _stateManager.UpdateGoal(actionPlan.Goal ?? "General exploration");
 
                 // Simulate action execution
-                await Task.Delay(1000, cancellationToken);
+                _logger.LogInformation("Executing action: {Description}", action.Description);
+                // Execute search action using the agent's search tool
+                var searchPrompt = $"Search the internet for information about: {action.Description}. Provide a summary of your findings.";
+                var searchResult = await _agent.RunAsync(searchPrompt, _thread, cancellationToken: cancellationToken);
+                var searchResponse = searchResult.Text ?? searchResult.ToString();
+
+                // Add search results to memory as a thought
+                var searchThought = new AgentThought
+                {
+                    Type = ThoughtType.Observation,
+                    Content = $"Search results for '{action.Description}': {searchResponse}"
+                };
+                _stateManager.AddThought(searchThought);
+                _logger.LogInformation("Search results added to memory: {Content}", searchResponse);
+
+                var summaryResult = await _agent.RunAsync($"Based on the search results, summarize your findings regarding: {action.Description}", _thread, cancellationToken: cancellationToken);
+                var summaryResponse = summaryResult.Text ?? summaryResult.ToString();
+                _stateManager.AddThought(new AgentThought
+                {
+                    Type = ThoughtType.Reflection,
+                    Content = $"Summary of findings for '{action.Description}': {summaryResponse}"
+                });
 
                 action.Status = ActionStatus.Completed;
                 action.Output = $"Completed: {action.Description}";

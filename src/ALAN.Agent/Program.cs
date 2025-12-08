@@ -1,13 +1,16 @@
 using ALAN.Agent.Services;
-using Microsoft.Extensions.Configuration;
+using ALAN.Agent.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
-using Azure.AI.OpenAI;
+
+
 using Azure;
 using OpenAI;
+using Azure.AI.OpenAI;
+using Azure.AI.Projects.OpenAI;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -55,6 +58,14 @@ var deploymentName = builder.Configuration["AzureOpenAI:DeploymentName"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT")
     ?? "gpt-4o-mini";
 
+// Get Google Custom Search configuration
+var googleApiKey = builder.Configuration["GoogleSearch:ApiKey"]
+    ?? builder.Configuration["GOOGLE_SEARCH_API_KEY"]
+    ?? Environment.GetEnvironmentVariable("GOOGLE_SEARCH_API_KEY");
+
+var googleSearchEngineId = builder.Configuration["GoogleSearch:SearchEngineId"]
+    ?? builder.Configuration["GOOGLE_SEARCH_ENGINE_ID"]
+    ?? Environment.GetEnvironmentVariable("GOOGLE_SEARCH_ENGINE_ID");
 
 // Register the ChatClient and create AIAgent
 builder.Services.AddSingleton<AIAgent>(sp =>
@@ -62,10 +73,30 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     if (!string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey))
     {
         var azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
-        return azureClient
-                .GetChatClient(deploymentName)
-                .CreateAIAgent(instructions: "You are an autonomous AI agent. Think about interesting things and take actions to learn and explore.",
-                            name: "ALAN Agent");
+        var tools = new List<AITool>();
+
+        // Add Google Search tool if configured
+        if (!string.IsNullOrEmpty(googleApiKey) && !string.IsNullOrEmpty(googleSearchEngineId))
+        {
+            var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<GoogleSearchTool>();
+            var searchTool = new GoogleSearchTool(googleApiKey, googleSearchEngineId, logger);
+            var searchFunction = GoogleSearchTool.CreateAIFunction(searchTool);
+            tools.Add(searchFunction);
+
+            logger.LogInformation("Google Search tool initialized and registered");
+        }
+        else
+        {
+            var logger = sp.GetRequiredService<ILogger<Program>>();
+            logger.LogWarning("Google Search API key or Search Engine ID not configured. Search functionality will not be available.");
+        }
+
+        IChatClient chatClient = azureClient.GetChatClient(deploymentName).AsIChatClient();
+
+        return chatClient.CreateAIAgent(
+                    instructions: "You are an autonomous AI agent. You can search the web for information when needed. Think about interesting things and take actions to learn and explore.",
+                    tools: tools,
+                    name: "ALAN Agent");
 
     }
     else

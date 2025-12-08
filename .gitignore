@@ -43,3 +43,4 @@ dist/
 # Client-side libraries (managed by libman)
 src/ALAN.Web/wwwroot/lib/
 
+search_key.json

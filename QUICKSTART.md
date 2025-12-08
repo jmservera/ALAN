@@ -31,6 +31,14 @@ Then open your browser to: `http://localhost:8080`
 
 ### 3. Option B: Run Locally with .NET
 
+**First time setup - restore client libraries:**
+```bash
+cd src/ALAN.Web
+dotnet tool install -g Microsoft.Web.LibraryManager.Cli
+libman restore
+cd ../..
+```
+
 **Terminal 1 - Agent:**
 ```bash
 cd src/ALAN.Agent

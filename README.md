@@ -49,19 +49,26 @@ Set your OpenAI API key in one of the following ways:
 
 ### Using .NET CLI
 
-1. Run the agent:
+1. Restore client-side libraries (first time only):
+   ```bash
+   cd src/ALAN.Web
+   dotnet tool install -g Microsoft.Web.LibraryManager.Cli
+   libman restore
+   ```
+
+2. Run the agent:
    ```bash
    cd src/ALAN.Agent
    dotnet run
    ```
 
-2. Run the web interface (in a separate terminal):
+3. Run the web interface (in a separate terminal):
    ```bash
    cd src/ALAN.Web
    dotnet run
    ```
 
-3. Open your browser to `https://localhost:5001` (or the URL shown in the terminal)
+4. Open your browser to `https://localhost:5001` (or the URL shown in the terminal)
 
 ### Using Docker Compose
 

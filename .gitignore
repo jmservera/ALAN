@@ -8,6 +8,7 @@ obj/
 
 # Visual Studio
 .vs/
+.vscode/
 
 # Rider
 .idea/
@@ -38,3 +39,7 @@ dist/
 *.tmp
 *.temp
 /tmp/
+
+# Client-side libraries (managed by libman)
+wwwroot/lib/
+

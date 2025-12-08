@@ -1,0 +1,38 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C#: Launch ALAN.Agent",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/ALAN.Agent/ALAN.Agent.csproj",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "openOnFirstSessionStart"
+    },
+    {
+      "name": "C#: Launch ALAN.Web",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/ALAN.Web/ALAN.Web.csproj",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "openOnFirstSessionStart",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Launch Agent + Web",
+      "configurations": ["C#: Launch ALAN.Agent", "C#: Launch ALAN.Web"],
+      "stopAll": true,
+      "preLaunchTask": "build-all"
+    }
+  ]
+}

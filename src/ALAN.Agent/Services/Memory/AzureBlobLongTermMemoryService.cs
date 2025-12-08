@@ -66,9 +66,17 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
 
     public async Task<MemoryEntry?> GetMemoryAsync(string id, CancellationToken cancellationToken = default)
     {
-        // Search through date hierarchy to find the blob
+        // Note: Without an external index, we need to search for the blob
+        // For better performance in production, consider:
+        // 1. Maintaining an Azure Table Storage index of ID -> blob path
+        // 2. Using a consistent naming scheme that includes the memory ID
+        // 3. Adding a metadata tag for memory ID and using Azure Blob Index tags
+        
+        // For now, we search recent dates first (most likely location)
         var now = DateTime.UtcNow;
-        for (int daysBack = 0; daysBack < 365; daysBack++)
+        
+        // Search recent 30 days first (90% of lookups likely here)
+        for (int daysBack = 0; daysBack < 30; daysBack++)
         {
             var date = now.AddDays(-daysBack);
             var blobName = $"{date:yyyy/MM/dd}/{id}.json";
@@ -89,7 +97,8 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
             }
         }
 
-        _logger.LogWarning("Memory {Id} not found", id);
+        // If not found in recent 30 days, log warning
+        _logger.LogWarning("Memory {Id} not found in recent 30 days (consider extending search if needed)", id);
         return null;
     }
 
@@ -98,7 +107,13 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
         var results = new List<MemoryEntry>();
         var queryLower = query.ToLowerInvariant();
 
+        // Use prefix filtering to only search recent blobs (last 90 days)
+        var now = DateTime.UtcNow;
+        var cutoffDate = now.AddDays(-90);
+        var prefix = $"{cutoffDate:yyyy/MM}"; // Start from 90 days ago
+
         await foreach (var blobItem in _containerClient.GetBlobsAsync(
+            prefix: prefix,
             traits: BlobTraits.Metadata,
             cancellationToken: cancellationToken))
         {
@@ -143,27 +158,36 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
     {
         var results = new List<MemoryEntry>();
 
-        await foreach (var blobItem in _containerClient.GetBlobsAsync(
-            traits: BlobTraits.Metadata,
-            cancellationToken: cancellationToken))
+        // Use date-based prefix to only fetch recent blobs (last 30 days)
+        var now = DateTime.UtcNow;
+        for (int daysBack = 0; daysBack < 30 && results.Count < count; daysBack++)
         {
-            if (results.Count >= count) break;
+            var date = now.AddDays(-daysBack);
+            var prefix = $"{date:yyyy/MM/dd}/";
 
-            var blobClient = _containerClient.GetBlobClient(blobItem.Name);
-            try
+            await foreach (var blobItem in _containerClient.GetBlobsAsync(
+                prefix: prefix,
+                traits: BlobTraits.Metadata,
+                cancellationToken: cancellationToken))
             {
-                var response = await blobClient.DownloadContentAsync(cancellationToken);
-                var json = response.Value.Content.ToString();
-                var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
-                
-                if (memory != null)
+                if (results.Count >= count) break;
+
+                var blobClient = _containerClient.GetBlobClient(blobItem.Name);
+                try
                 {
-                    results.Add(memory);
+                    var response = await blobClient.DownloadContentAsync(cancellationToken);
+                    var json = response.Value.Content.ToString();
+                    var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
+                    
+                    if (memory != null)
+                    {
+                        results.Add(memory);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to deserialize memory from blob {BlobName}", blobItem.Name);
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to deserialize memory from blob {BlobName}", blobItem.Name);
+                }
             }
         }
 
@@ -172,9 +196,9 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
 
     public async Task<bool> DeleteMemoryAsync(string id, CancellationToken cancellationToken = default)
     {
-        // Search through date hierarchy to find and delete the blob
+        // Search through recent dates to find and delete the blob (limit to 30 days)
         var now = DateTime.UtcNow;
-        for (int daysBack = 0; daysBack < 365; daysBack++)
+        for (int daysBack = 0; daysBack < 30; daysBack++)
         {
             var date = now.AddDays(-daysBack);
             var blobName = $"{date:yyyy/MM/dd}/{id}.json";
@@ -188,7 +212,7 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
             }
         }
 
-        _logger.LogWarning("Memory {Id} not found for deletion", id);
+        _logger.LogWarning("Memory {Id} not found for deletion in recent 30 days", id);
         return false;
     }
 

@@ -152,6 +152,6 @@ The service searches back 365 days. Older memories may not be retrieved by ID lo
 
 - Async batch operations for better performance
 - Integration with Azure Cognitive Search for semantic search
-- Support for blob lifecyclemanagement policies
+- Support for blob lifecycle management policies
 - Compression for large memories
 - Versioning for memory updates

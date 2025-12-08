@@ -3,7 +3,11 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.SemanticKernel;
+using Microsoft.Extensions.AI;
+using Microsoft.Agents.AI;
+using Azure.AI.OpenAI;
+using Azure;
+using OpenAI;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -17,9 +21,6 @@ builder.Logging.SetMinimumLevel(Enum.Parse<LogLevel>(logLevel));
 
 // Register services
 builder.Services.AddSingleton<StateManager>();
-
-// Configure Semantic Kernel
-var kernelBuilder = builder.Services.AddKernel();
 
 // Try to get Azure OpenAI configuration
 var endpoint = builder.Configuration["AzureOpenAI:Endpoint"]
@@ -35,20 +36,28 @@ var deploymentName = builder.Configuration["AzureOpenAI:DeploymentName"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT")
     ?? "gpt-4o-mini";
 
-if (!string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey))
+
+// Register the ChatClient and create AIAgent
+builder.Services.AddSingleton<AIAgent>(sp =>
 {
-    kernelBuilder.AddAzureOpenAIChatCompletion(
-        deploymentName: deploymentName,
-        endpoint: endpoint,
-        apiKey: apiKey);
-}
-else
-{
-    // Use a simulated service for demo purposes
-    Console.WriteLine("Warning: No Azure OpenAI configuration found. Using simulated AI responses.");
-    Console.WriteLine($"Endpoint: {endpoint}");
-    Console.WriteLine($"ApiKey: {(string.IsNullOrEmpty(apiKey) ? "not set" : "***")}");
-}
+    if (!string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey))
+    {
+        var azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+        return azureClient
+                .GetChatClient(deploymentName)
+                .CreateAIAgent(instructions: "You are an autonomous AI agent. Think about interesting things and take actions to learn and explore.",
+                            name: "ALAN Agent");
+
+    }
+    else
+    {
+        // Use a simulated service for demo purposes
+        Console.WriteLine("Warning: No Azure OpenAI configuration found. Using simulated AI responses.");
+        Console.WriteLine($"Endpoint: {endpoint}");
+        Console.WriteLine($"ApiKey: {(string.IsNullOrEmpty(apiKey) ? "not set" : "***")}");
+        throw new InvalidOperationException("Azure OpenAI configuration is required.");
+    }
+});
 
 // Register the autonomous agent as a hosted service
 builder.Services.AddHostedService<AgentHostedService>();

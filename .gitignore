@@ -1,0 +1,45 @@
+# Build outputs
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.log
+
+# Visual Studio
+.vs/
+.vscode/
+
+# Rider
+.idea/
+
+# User secrets
+appsettings.Development.json
+secrets.json
+.env
+
+# Docker
+.dockerignore
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Node modules (if any)
+node_modules/
+package-lock.json
+
+# Build artifacts
+publish/
+dist/
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+
+# Client-side libraries (managed by libman)
+src/ALAN.Web/wwwroot/lib/
+

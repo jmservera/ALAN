@@ -1,0 +1,30 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Copy solution and project files
+COPY ["ALAN.sln", "./"]
+COPY ["src/ALAN.Agent/ALAN.Agent.csproj", "src/ALAN.Agent/"]
+COPY ["src/ALAN.Web/ALAN.Web.csproj", "src/ALAN.Web/"]
+COPY ["src/ALAN.Shared/ALAN.Shared.csproj", "src/ALAN.Shared/"]
+
+# Restore dependencies
+RUN dotnet restore "ALAN.sln"
+
+# Copy all source files
+COPY . .
+
+# Build the agent project
+WORKDIR "/src/src/ALAN.Agent"
+RUN dotnet build "ALAN.Agent.csproj" -c Release -o /app/build
+
+# Publish stage
+FROM build AS publish
+RUN dotnet publish "ALAN.Agent.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+# Final stage
+FROM mcr.microsoft.com/dotnet/runtime:8.0 AS final
+WORKDIR /app
+
+COPY --from=publish /app/publish .
+ENTRYPOINT ["dotnet", "ALAN.Agent.dll"]

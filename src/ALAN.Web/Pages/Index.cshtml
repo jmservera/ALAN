@@ -1,0 +1,227 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "ALAN - Autonomous Learning Agent Network";
+}
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12 text-center mb-4">
+            <h1 class="display-4">ALAN</h1>
+            <p class="lead">Autonomous Learning Agent Network</p>
+            <p class="text-muted">Observing agent thoughts and actions in real-time</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Agent Status Card -->
+        <div class="col-md-4 mb-4">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Agent Status</h5>
+                </div>
+                <div class="card-body">
+                    <dl class="row">
+                        <dt class="col-sm-5">Status:</dt>
+                        <dd class="col-sm-7">
+                            <span id="agent-status" class="badge bg-secondary">Initializing</span>
+                        </dd>
+                        
+                        <dt class="col-sm-5">Current Goal:</dt>
+                        <dd class="col-sm-7" id="agent-goal">Loading...</dd>
+                        
+                        <dt class="col-sm-5">Last Updated:</dt>
+                        <dd class="col-sm-7" id="agent-updated">-</dd>
+                        
+                        <dt class="col-sm-5">Current Prompt:</dt>
+                        <dd class="col-sm-7" id="agent-prompt">-</dd>
+                    </dl>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Connection Status</h5>
+                </div>
+                <div class="card-body">
+                    <p>
+                        <span id="connection-status" class="badge bg-warning">Connecting...</span>
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Thoughts Panel -->
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Recent Thoughts</h5>
+                </div>
+                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                    <div id="thoughts-container">
+                        <p class="text-muted">Waiting for agent thoughts...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions Panel -->
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0">Recent Actions</h5>
+                </div>
+                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                    <div id="actions-container">
+                        <p class="text-muted">Waiting for agent actions...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.14/signalr.min.js"></script>
+    <script>
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/agenthub")
+            .withAutomaticReconnect()
+            .build();
+
+        connection.on("ReceiveStateUpdate", function (state) {
+            updateAgentStatus(state);
+        });
+
+        connection.on("ReceiveThought", function (thought) {
+            addThought(thought);
+        });
+
+        connection.on("ReceiveAction", function (action) {
+            addAction(action);
+        });
+
+        connection.start()
+            .then(() => {
+                document.getElementById("connection-status").textContent = "Connected";
+                document.getElementById("connection-status").className = "badge bg-success";
+            })
+            .catch(err => {
+                console.error(err);
+                document.getElementById("connection-status").textContent = "Connection Failed";
+                document.getElementById("connection-status").className = "badge bg-danger";
+            });
+
+        connection.onreconnecting(() => {
+            document.getElementById("connection-status").textContent = "Reconnecting...";
+            document.getElementById("connection-status").className = "badge bg-warning";
+        });
+
+        connection.onreconnected(() => {
+            document.getElementById("connection-status").textContent = "Connected";
+            document.getElementById("connection-status").className = "badge bg-success";
+        });
+
+        function updateAgentStatus(state) {
+            const statusBadge = document.getElementById("agent-status");
+            statusBadge.textContent = state.status;
+            
+            // Update badge color based on status
+            statusBadge.className = "badge " + getStatusColor(state.status);
+            
+            document.getElementById("agent-goal").textContent = state.currentGoal || "No specific goal";
+            document.getElementById("agent-updated").textContent = new Date(state.lastUpdated).toLocaleTimeString();
+            document.getElementById("agent-prompt").textContent = state.currentPrompt || "Default prompt";
+        }
+
+        function getStatusColor(status) {
+            switch(status) {
+                case "Idle": return "bg-secondary";
+                case "Thinking": return "bg-info";
+                case "Acting": return "bg-primary";
+                case "Paused": return "bg-warning";
+                case "Error": return "bg-danger";
+                default: return "bg-secondary";
+            }
+        }
+
+        function getThoughtTypeColor(type) {
+            switch(type) {
+                case "Observation": return "primary";
+                case "Planning": return "info";
+                case "Reasoning": return "success";
+                case "Decision": return "warning";
+                case "Reflection": return "secondary";
+                default: return "secondary";
+            }
+        }
+
+        function getActionStatusColor(status) {
+            switch(status) {
+                case "Pending": return "secondary";
+                case "Running": return "info";
+                case "Completed": return "success";
+                case "Failed": return "danger";
+                default: return "secondary";
+            }
+        }
+
+        function addThought(thought) {
+            const container = document.getElementById("thoughts-container");
+            
+            // Remove "waiting" message if present
+            if (container.querySelector("p.text-muted")) {
+                container.innerHTML = "";
+            }
+            
+            const thoughtDiv = document.createElement("div");
+            thoughtDiv.className = "mb-3 p-2 border-start border-3 border-" + getThoughtTypeColor(thought.type);
+            thoughtDiv.innerHTML = `
+                <small class="text-muted">${new Date(thought.timestamp).toLocaleTimeString()}</small>
+                <span class="badge bg-${getThoughtTypeColor(thought.type)} ms-2">${thought.type}</span>
+                <p class="mb-0 mt-1">${escapeHtml(thought.content)}</p>
+            `;
+            
+            container.insertBefore(thoughtDiv, container.firstChild);
+            
+            // Keep only last 20 thoughts
+            while (container.children.length > 20) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function addAction(action) {
+            const container = document.getElementById("actions-container");
+            
+            // Remove "waiting" message if present
+            if (container.querySelector("p.text-muted")) {
+                container.innerHTML = "";
+            }
+            
+            const actionDiv = document.createElement("div");
+            actionDiv.className = "mb-3 p-2 border rounded";
+            actionDiv.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center">
+                    <strong>${escapeHtml(action.name)}</strong>
+                    <span class="badge bg-${getActionStatusColor(action.status)}">${action.status}</span>
+                </div>
+                <small class="text-muted">${new Date(action.timestamp).toLocaleTimeString()}</small>
+                <p class="mb-0 mt-1">${escapeHtml(action.description)}</p>
+                ${action.output ? `<small class="text-success">Output: ${escapeHtml(action.output)}</small>` : ''}
+            `;
+            
+            container.insertBefore(actionDiv, container.firstChild);
+            
+            // Keep only last 15 actions
+            while (container.children.length > 15) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+}

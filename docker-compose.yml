@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  alan-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OpenAI__ModelId=gpt-4o-mini
+    restart: unless-stopped
+
+  alan-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    depends_on:
+      - alan-agent

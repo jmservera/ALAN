@@ -107,45 +107,50 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
         var results = new List<MemoryEntry>();
         var queryLower = query.ToLowerInvariant();
 
-        // Use prefix filtering to only search recent blobs (last 90 days)
+        // Search recent blobs (last 90 days) using date-based iteration
         var now = DateTime.UtcNow;
         var cutoffDate = now.AddDays(-90);
-        var prefix = $"{cutoffDate:yyyy/MM}"; // Start from 90 days ago
-
-        await foreach (var blobItem in _containerClient.GetBlobsAsync(
-            prefix: prefix,
-            traits: BlobTraits.Metadata,
-            cancellationToken: cancellationToken))
+        
+        // Iterate through days from most recent to cutoff
+        for (var date = now.Date; date >= cutoffDate.Date && results.Count < maxResults; date = date.AddDays(-1))
         {
-            if (results.Count >= maxResults) break;
+            var prefix = $"{date:yyyy/MM/dd}/";
 
-            // Check if metadata matches query
-            bool matches = false;
-            if (blobItem.Metadata != null)
+            await foreach (var blobItem in _containerClient.GetBlobsAsync(
+                prefix: prefix,
+                traits: BlobTraits.Metadata,
+                cancellationToken: cancellationToken))
             {
-                matches = blobItem.Metadata.Values.Any(v => v.ToLowerInvariant().Contains(queryLower));
-            }
+                if (results.Count >= maxResults) break;
 
-            if (matches || blobItem.Name.Contains(queryLower, StringComparison.OrdinalIgnoreCase))
-            {
-                var blobClient = _containerClient.GetBlobClient(blobItem.Name);
-                try
+                // Check if metadata matches query
+                bool matches = false;
+                if (blobItem.Metadata != null)
                 {
-                    var response = await blobClient.DownloadContentAsync(cancellationToken);
-                    var json = response.Value.Content.ToString();
-                    var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
-                    
-                    if (memory != null && 
-                        (memory.Content.Contains(queryLower, StringComparison.OrdinalIgnoreCase) ||
-                         memory.Summary.Contains(queryLower, StringComparison.OrdinalIgnoreCase) ||
-                         memory.Tags.Any(t => t.Contains(queryLower, StringComparison.OrdinalIgnoreCase))))
-                    {
-                        results.Add(memory);
-                    }
+                    matches = blobItem.Metadata.Values.Any(v => v.ToLowerInvariant().Contains(queryLower));
                 }
-                catch (Exception ex)
+
+                if (matches || blobItem.Name.Contains(queryLower, StringComparison.OrdinalIgnoreCase))
                 {
-                    _logger.LogWarning(ex, "Failed to deserialize memory from blob {BlobName}", blobItem.Name);
+                    var blobClient = _containerClient.GetBlobClient(blobItem.Name);
+                    try
+                    {
+                        var response = await blobClient.DownloadContentAsync(cancellationToken);
+                        var json = response.Value.Content.ToString();
+                        var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
+                        
+                        if (memory != null && 
+                            (memory.Content.Contains(queryLower, StringComparison.OrdinalIgnoreCase) ||
+                             memory.Summary.Contains(queryLower, StringComparison.OrdinalIgnoreCase) ||
+                             memory.Tags.Any(t => t.Contains(queryLower, StringComparison.OrdinalIgnoreCase))))
+                        {
+                            results.Add(memory);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to deserialize memory from blob {BlobName}", blobItem.Name);
+                    }
                 }
             }
         }
@@ -218,11 +223,22 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
 
     public async Task<int> GetMemoryCountAsync(CancellationToken cancellationToken = default)
     {
+        // Note: This counts memories from the last 90 days only for performance
+        // To count all memories across all time, remove the date filtering
         int count = 0;
-        await foreach (var _ in _containerClient.GetBlobsAsync(cancellationToken: cancellationToken))
+        var now = DateTime.UtcNow;
+        var cutoffDate = now.AddDays(-90);
+        
+        for (var date = now.Date; date >= cutoffDate.Date; date = date.AddDays(-1))
         {
-            count++;
+            var prefix = $"{date:yyyy/MM/dd}/";
+            await foreach (var _ in _containerClient.GetBlobsAsync(prefix: prefix, cancellationToken: cancellationToken))
+            {
+                count++;
+            }
         }
+        
+        _logger.LogDebug("Memory count (last 90 days): {Count}", count);
         return count;
     }
 
@@ -231,31 +247,41 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
         var results = new List<MemoryEntry>();
         var typeString = type.ToString();
 
-        await foreach (var blobItem in _containerClient.GetBlobsAsync(
-            traits: BlobTraits.Metadata,
-            cancellationToken: cancellationToken))
-        {
-            if (results.Count >= maxResults) break;
+        // Use date-based filtering for performance (last 90 days)
+        var now = DateTime.UtcNow;
+        var cutoffDate = now.AddDays(-90);
 
-            if (blobItem.Metadata != null && 
-                blobItem.Metadata.TryGetValue("type", out var metadataType) && 
-                metadataType == typeString)
+        for (var date = now.Date; date >= cutoffDate.Date && results.Count < maxResults; date = date.AddDays(-1))
+        {
+            var prefix = $"{date:yyyy/MM/dd}/";
+
+            await foreach (var blobItem in _containerClient.GetBlobsAsync(
+                prefix: prefix,
+                traits: BlobTraits.Metadata,
+                cancellationToken: cancellationToken))
             {
-                var blobClient = _containerClient.GetBlobClient(blobItem.Name);
-                try
+                if (results.Count >= maxResults) break;
+
+                if (blobItem.Metadata != null && 
+                    blobItem.Metadata.TryGetValue("type", out var metadataType) && 
+                    metadataType == typeString)
                 {
-                    var response = await blobClient.DownloadContentAsync(cancellationToken);
-                    var json = response.Value.Content.ToString();
-                    var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
-                    
-                    if (memory != null && memory.Type == type)
+                    var blobClient = _containerClient.GetBlobClient(blobItem.Name);
+                    try
                     {
-                        results.Add(memory);
+                        var response = await blobClient.DownloadContentAsync(cancellationToken);
+                        var json = response.Value.Content.ToString();
+                        var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
+                        
+                        if (memory != null && memory.Type == type)
+                        {
+                            results.Add(memory);
+                        }
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to deserialize memory from blob {BlobName}", blobItem.Name);
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to deserialize memory from blob {BlobName}", blobItem.Name);
+                    }
                 }
             }
         }

@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
-namespace ALAN.Agent.Services.Memory;
+namespace ALAN.Shared.Services.Memory;
 
 /// <summary>
 /// In-memory implementation of short-term memory service.

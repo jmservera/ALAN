@@ -1,5 +1,5 @@
 using ALAN.Agent.Services;
-using ALAN.Agent.Services.Memory;
+using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.AI;

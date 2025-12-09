@@ -1,4 +1,5 @@
 using ALAN.Shared.Models;
+using ALAN.Shared.Services.Memory;
 using System.Collections.Concurrent;
 
 namespace ALAN.Agent.Services;
@@ -10,13 +11,15 @@ public class StateManager
     private readonly ConcurrentDictionary<string, AgentAction> _actionDict = new();
     private AgentState _currentState = new();
     private readonly object _lock = new();
-    private readonly StatePublisher? _statePublisher;
+    private readonly IShortTermMemoryService _shortTermMemory;
+    private readonly ILongTermMemoryService _longTermMemory;
     
     public event EventHandler<AgentState>? StateChanged;
 
-    public StateManager(StatePublisher? statePublisher = null)
+    public StateManager(IShortTermMemoryService shortTermMemory, ILongTermMemoryService longTermMemory)
     {
-        _statePublisher = statePublisher;
+        _shortTermMemory = shortTermMemory;
+        _longTermMemory = longTermMemory;
     }
     
     public void AddThought(AgentThought thought)
@@ -31,8 +34,8 @@ public class StateManager
         
         UpdateState();
         
-        // Publish to web service
-        _ = _statePublisher?.PublishThoughtAsync(thought);
+        // Store thought in long-term memory for persistence
+        _ = StoreThoughtAsync(thought);
     }
     
     public void AddAction(AgentAction action)
@@ -51,8 +54,8 @@ public class StateManager
         
         UpdateState();
         
-        // Publish to web service
-        _ = _statePublisher?.PublishActionAsync(action);
+        // Store action in long-term memory for persistence
+        _ = StoreActionAsync(action);
     }
     
     public void UpdateAction(AgentAction action)
@@ -60,8 +63,8 @@ public class StateManager
         _actionDict[action.Id] = action;
         UpdateState();
         
-        // Publish to web service
-        _ = _statePublisher?.PublishActionAsync(action);
+        // Update action in long-term memory
+        _ = StoreActionAsync(action);
     }
     
     public void UpdateStatus(AgentStatus status)
@@ -73,9 +76,7 @@ public class StateManager
         }
         
         NotifyStateChanged();
-        
-        // Publish full state to web service
-        _ = _statePublisher?.PublishStateAsync(GetCurrentState());
+        PersistState();
     }
     
     public void UpdateGoal(string goal)
@@ -87,9 +88,7 @@ public class StateManager
         }
         
         NotifyStateChanged();
-        
-        // Publish full state to web service
-        _ = _statePublisher?.PublishStateAsync(GetCurrentState());
+        PersistState();
     }
     
     public void UpdatePrompt(string prompt)
@@ -101,9 +100,7 @@ public class StateManager
         }
         
         NotifyStateChanged();
-        
-        // Publish full state to web service
-        _ = _statePublisher?.PublishStateAsync(GetCurrentState());
+        PersistState();
     }
     
     public AgentState GetCurrentState()
@@ -135,10 +132,69 @@ public class StateManager
         }
         
         NotifyStateChanged();
+        PersistState();
     }
     
     private void NotifyStateChanged()
     {
         StateChanged?.Invoke(this, GetCurrentState());
+    }
+
+    private void PersistState()
+    {
+        // Store current state in short-term memory for web service to pull
+        _ = _shortTermMemory.SetAsync("agent:current_state", GetCurrentState(), TimeSpan.FromHours(1));
+    }
+
+    private async Task StoreThoughtAsync(AgentThought thought)
+    {
+        try
+        {
+            var memory = new MemoryEntry
+            {
+                Id = thought.Id,
+                Type = thought.Type switch
+                {
+                    ThoughtType.Observation => MemoryType.Observation,
+                    ThoughtType.Reasoning => MemoryType.Decision,
+                    ThoughtType.Reflection => MemoryType.Reflection,
+                    _ => MemoryType.Observation
+                },
+                Content = thought.Content,
+                Summary = $"{thought.Type}: {thought.Content.Substring(0, Math.Min(50, thought.Content.Length))}...",
+                Importance = 0.4,
+                Tags = new List<string> { "thought", thought.Type.ToString().ToLower() },
+                Timestamp = thought.Timestamp
+            };
+
+            await _longTermMemory.StoreMemoryAsync(memory);
+        }
+        catch (Exception)
+        {
+            // Silently fail - don't interrupt agent operation
+        }
+    }
+
+    private async Task StoreActionAsync(AgentAction action)
+    {
+        try
+        {
+            var memory = new MemoryEntry
+            {
+                Id = action.Id,
+                Type = action.Status == ActionStatus.Completed ? MemoryType.Success : MemoryType.Decision,
+                Content = $"Action: {action.Name}\nDescription: {action.Description}\nInput: {action.Input}\nOutput: {action.Output}",
+                Summary = $"{action.Name}: {action.Description}",
+                Importance = 0.6,
+                Tags = new List<string> { "action", action.Status.ToString().ToLower(), action.Name.ToLower() },
+                Timestamp = action.Timestamp
+            };
+
+            await _longTermMemory.StoreMemoryAsync(memory);
+        }
+        catch (Exception)
+        {
+            // Silently fail - don't interrupt agent operation
+        }
     }
 }

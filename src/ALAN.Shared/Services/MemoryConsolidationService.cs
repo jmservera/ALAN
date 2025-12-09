@@ -4,7 +4,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
-namespace ALAN.Agent.Services.Memory;
+namespace ALAN.Shared.Services.Memory;
 
 /// <summary>
 /// Service for consolidating memories and extracting learnings.

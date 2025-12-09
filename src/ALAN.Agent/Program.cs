@@ -1,5 +1,5 @@
 using ALAN.Agent.Services;
-using ALAN.Agent.Services.Memory;
+using ALAN.Shared.Services.Memory;
 using ALAN.Agent.Services.MCP;
 using ALAN.Agent.Plugins;
 using Microsoft.Extensions.Configuration;
@@ -23,13 +23,8 @@ var logLevel = builder.Configuration["LOGGING_LEVEL"]
     ?? "Information";
 builder.Logging.SetMinimumLevel(Enum.Parse<LogLevel>(logLevel));
 
-// Register StatePublisher first (optional dependency)
-builder.Services.AddSingleton<StatePublisher>();
-
-// Register StateManager with StatePublisher
-builder.Services.AddSingleton<StateManager>(sp => 
-    new StateManager(sp.GetService<StatePublisher>()));
-
+// Register services
+builder.Services.AddSingleton<StateManager>();
 builder.Services.AddSingleton<HumanInputHandler>();
 builder.Services.AddSingleton<CodeProposalService>();
 builder.Services.AddSingleton<McpConfigurationService>();

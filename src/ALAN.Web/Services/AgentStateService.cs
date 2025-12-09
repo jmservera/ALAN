@@ -1,4 +1,5 @@
 using ALAN.Shared.Models;
+using ALAN.Shared.Services.Memory;
 using ALAN.Web.Hubs;
 using Microsoft.AspNetCore.SignalR;
 
@@ -8,30 +9,38 @@ public class AgentStateService : BackgroundService
 {
     private readonly IHubContext<AgentHub> _hubContext;
     private readonly ILogger<AgentStateService> _logger;
+    private readonly IShortTermMemoryService _shortTermMemory;
+    private readonly ILongTermMemoryService _longTermMemory;
     private AgentState _state = new();
+    private readonly HashSet<string> _seenThoughtIds = new();
+    private readonly HashSet<string> _seenActionIds = new();
     
     public AgentStateService(
         IHubContext<AgentHub> hubContext,
-        ILogger<AgentStateService> logger)
+        ILogger<AgentStateService> logger,
+        IShortTermMemoryService shortTermMemory,
+        ILongTermMemoryService longTermMemory)
     {
         _hubContext = hubContext;
         _logger = logger;
+        _shortTermMemory = shortTermMemory;
+        _longTermMemory = longTermMemory;
     }
     
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Agent State Service starting (relay mode - waiting for agent updates)...");
+        _logger.LogInformation("Agent State Service starting (pull mode - reading from shared memory)...");
         
         // Initial state
-        _state.CurrentGoal = "Waiting for autonomous agent to connect";
+        _state.CurrentGoal = "Waiting for autonomous agent to start";
         _state.Status = AgentStatus.Idle;
         
-        // Just keep the service alive to relay messages
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
+                await PullStateFromMemoryAsync(stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
             }
             catch (OperationCanceledException)
             {
@@ -40,32 +49,69 @@ public class AgentStateService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in agent state service");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
         
         _logger.LogInformation("Agent State Service stopped");
     }
 
-    public async Task UpdateStateAsync(AgentState state)
+    private async Task PullStateFromMemoryAsync(CancellationToken cancellationToken)
     {
-        _state = state;
-        _state.LastUpdated = DateTime.UtcNow;
+        // Pull current state from short-term memory
+        var currentState = await _shortTermMemory.GetAsync<AgentState>("agent:current_state", cancellationToken);
         
-        // Broadcast state update to all connected clients
-        await _hubContext.Clients.All.SendAsync("ReceiveStateUpdate", _state);
-        _logger.LogDebug("Broadcasted state update: {Status}", state.Status);
-    }
+        if (currentState != null)
+        {
+            var stateChanged = _state.Status != currentState.Status || 
+                              _state.CurrentGoal != currentState.CurrentGoal ||
+                              _state.CurrentPrompt != currentState.CurrentPrompt;
 
-    public async Task BroadcastThoughtAsync(AgentThought thought)
-    {
-        await _hubContext.Clients.All.SendAsync("ReceiveThought", thought);
-        _logger.LogDebug("Broadcasted thought: {Type}", thought.Type);
-    }
+            _state = currentState;
+            
+            if (stateChanged)
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveStateUpdate", _state, cancellationToken);
+                _logger.LogDebug("Broadcasted state update: {Status}", _state.Status);
+            }
 
-    public async Task BroadcastActionAsync(AgentAction action)
-    {
-        await _hubContext.Clients.All.SendAsync("ReceiveAction", action);
-        _logger.LogDebug("Broadcasted action: {Name}", action.Name);
+            // Broadcast new thoughts
+            if (currentState.RecentThoughts != null)
+            {
+                foreach (var thought in currentState.RecentThoughts.Where(t => !_seenThoughtIds.Contains(t.Id)))
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceiveThought", thought, cancellationToken);
+                    _seenThoughtIds.Add(thought.Id);
+                    _logger.LogDebug("Broadcasted thought: {Type}", thought.Type);
+                }
+            }
+
+            // Broadcast new actions
+            if (currentState.RecentActions != null)
+            {
+                foreach (var action in currentState.RecentActions.Where(a => !_seenActionIds.Contains(a.Id)))
+                {
+                    await _hubContext.Clients.All.SendAsync("ReceiveAction", action, cancellationToken);
+                    _seenActionIds.Add(action.Id);
+                    _logger.LogDebug("Broadcasted action: {Name}", action.Name);
+                }
+            }
+
+            // Cleanup old IDs to prevent memory bloat
+            if (_seenThoughtIds.Count > 1000)
+            {
+                var toRemove = _seenThoughtIds.Take(_seenThoughtIds.Count - 500).ToList();
+                foreach (var id in toRemove)
+                    _seenThoughtIds.Remove(id);
+            }
+
+            if (_seenActionIds.Count > 500)
+            {
+                var toRemove = _seenActionIds.Take(_seenActionIds.Count - 250).ToList();
+                foreach (var id in toRemove)
+                    _seenActionIds.Remove(id);
+            }
+        }
     }
     
     public AgentState GetCurrentState()

@@ -1,4 +1,4 @@
-using ALAN.Agent.Services.Memory;
+using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace ALAN.Agent.Services;

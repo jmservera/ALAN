@@ -1,6 +1,6 @@
 using ALAN.Shared.Models;
 
-namespace ALAN.Agent.Services.Memory;
+namespace ALAN.Shared.Services.Memory;
 
 /// <summary>
 /// Interface for long-term memory storage and retrieval.

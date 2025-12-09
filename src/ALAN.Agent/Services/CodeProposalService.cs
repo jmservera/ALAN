@@ -1,5 +1,5 @@
 using ALAN.Shared.Models;
-using ALAN.Agent.Services.Memory;
+using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 

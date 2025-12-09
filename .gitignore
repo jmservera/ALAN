@@ -43,3 +43,5 @@ dist/
 # Client-side libraries (managed by libman)
 src/ALAN.Web/wwwroot/lib/
 
+__azurite_*
+__*__/

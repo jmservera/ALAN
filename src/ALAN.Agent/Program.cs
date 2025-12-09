@@ -11,6 +11,7 @@ using Microsoft.Agents.AI;
 using Azure.AI.OpenAI;
 using Azure;
 using OpenAI;
+using Azure.Identity;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -88,21 +89,31 @@ var deploymentName = builder.Configuration["AzureOpenAI:DeploymentName"]
 // Register the ChatClient and create AIAgent with MCP tools
 builder.Services.AddSingleton<AIAgent>(sp =>
 {
-    if (!string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey))
+    if (!string.IsNullOrEmpty(endpoint) )
     {
-        var azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
-        var chatClient = azureClient.GetChatClient(deploymentName);
-        
-        // Create AIAgent
-        var agent = chatClient.CreateAIAgent(
-            instructions: "You are an autonomous AI agent. Think about interesting things and take actions to learn and explore.",
-            name: "ALAN Agent");
-        
-        // Load and configure MCP servers from YAML
+        AzureOpenAIClient azureClient;
+        if(!string.IsNullOrEmpty(apiKey))
+        {
+        azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+        }
+        else
+        {
+            azureClient = new AzureOpenAIClient(new Uri(endpoint), new DefaultAzureCredential());
+        }
+        //                 // Load and configure MCP servers from YAML
         var mcpConfigPath = Path.Combine(AppContext.BaseDirectory, "mcp-config.yaml");
         var mcpService = sp.GetRequiredService<McpConfigurationService>();
-        mcpService.ConfigureMcpTools(agent, mcpConfigPath);
-        
+        var tools=mcpService.ConfigureMcpTools(mcpConfigPath);
+        // mcpService.ConfigureMcpTools(agent, mcpConfigPath);
+
+        var agent = azureClient.GetChatClient(deploymentName)
+                                .CreateAIAgent(
+                                    instructions: "You are an autonomous AI agent. Think about how to improve your own code using the tools you have access to like GitHub or Microsoft Learn. Your goal is to iteratively enhance your capabilities and performance. Your source code is available at the GitHub repository: "
+                                        + (builder.Configuration["GITHUB_PROJECT_URL"] 
+                                            ?? Environment.GetEnvironmentVariable("GITHUB_PROJECT_URL")
+                                            ?? "jmservera/ALAN"),
+                                    tools: tools,
+                                    name: "ALAN-Agent");
         return agent;
     }
     else

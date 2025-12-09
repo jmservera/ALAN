@@ -20,7 +20,7 @@ public class AutonomousAgent
     private readonly HumanInputHandler _humanInputHandler;
     private bool _isRunning;
     private bool _isPaused;
-    private string _currentPrompt = "You are an autonomous AI agent. Think about interesting things and take actions to learn and explore.";
+    private string _currentPrompt = "You are an autonomous AI agent. Think about how to improve yourself.";
     private int _consecutiveThrottles = 0;
     private int _iterationCount = 0;
 
@@ -240,7 +240,10 @@ Example:
         try
         {
             // Try to parse as JSON
-            var actionPlan = JsonSerializer.Deserialize<ActionPlan>(response);
+            var actionPlan = JsonSerializer.Deserialize<ActionPlan>(response, new JsonSerializerOptions 
+            { 
+                PropertyNameCaseInsensitive = true 
+            });
 
             if (actionPlan != null && !string.IsNullOrEmpty(actionPlan.Action))
             {
@@ -255,11 +258,26 @@ Example:
                 _stateManager.AddAction(action);
                 _stateManager.UpdateGoal(actionPlan.Goal ?? "General exploration");
 
+                var prompt = $@"You are an autonomous AI agent executing an action based on your previous reasoning.
+
+Current Goal: {actionPlan.Goal ?? "General exploration"}
+
+Reasoning: {actionPlan.Reasoning}
+
+Action to Execute: {actionPlan.Action}
+
+Please execute this action and provide:
+1. Steps you took to complete the action
+2. Any observations or insights gained
+3. Challenges encountered (if any)
+4. Next steps or recommendations
+
+Be specific and detailed in your response.";
                 // Simulate action execution
-                await Task.Delay(1000, cancellationToken);
+                var result=await _agent.RunAsync(prompt, _thread, cancellationToken: cancellationToken);
 
                 action.Status = ActionStatus.Completed;
-                action.Output = $"Completed: {action.Description}";
+                action.Output = $"Completed: {result.Text}";
                 _stateManager.UpdateAction(action);
 
                 _logger.LogInformation("Action completed: {Description}", action.Description);

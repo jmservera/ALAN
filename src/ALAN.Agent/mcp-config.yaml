@@ -1,17 +1,10 @@
 mcp:
   servers:
     github:
-      command: npx
-      args:
-        - -y
-        - "@modelcontextprotocol/server-github"
-      env:
-        GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PERSONAL_ACCESS_TOKEN}
+      type: http
+      url: https://api.githubcopilot.com/mcp/
+      pat: $GITHUB_MCP_PAT
     
     microsoft-learn:
-      command: npx
-      args:
-        - -y
-        - "@modelcontextprotocol/server-fetch"
-      env:
-        ALLOWED_DOMAINS: "learn.microsoft.com,docs.microsoft.com"
+      type: http
+      url: https://learn.microsoft.com/api/mcp

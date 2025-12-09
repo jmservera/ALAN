@@ -8,6 +8,7 @@ using Microsoft.Agents.AI;
 using Azure.AI.OpenAI;
 using Azure;
 using OpenAI;
+using Azure.Identity;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -59,14 +60,21 @@ var deploymentName = builder.Configuration["AzureOpenAI:DeploymentName"]
 // Register the ChatClient and create AIAgent
 builder.Services.AddSingleton<AIAgent>(sp =>
 {
-    if (!string.IsNullOrEmpty(endpoint) && !string.IsNullOrEmpty(apiKey))
+    if (!string.IsNullOrEmpty(endpoint) )
     {
-        var azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+        AzureOpenAIClient azureClient;
+        if(!string.IsNullOrEmpty(apiKey))
+        {
+        azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+        }
+        else
+        {
+            azureClient = new AzureOpenAIClient(new Uri(endpoint), new DefaultAzureCredential());
+        }
         return azureClient
                 .GetChatClient(deploymentName)
                 .CreateAIAgent(instructions: "You are an autonomous AI agent. Think about interesting things and take actions to learn and explore.",
-                            name: "ALAN Agent");
-
+                            name: "ALAN-Agent");
     }
     else
     {

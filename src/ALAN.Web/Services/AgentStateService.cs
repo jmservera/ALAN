@@ -138,14 +138,13 @@ public class AgentStateService : BackgroundService
         }
 
         // Broadcast action updates when status changes
-        foreach (var action in actions.Where(a => _seenActionIds.Contains(a.Id)))
+        foreach (var action in actions
+            .Where(a => _seenActionIds.Contains(a.Id))
+            .Where(a => _actionStatuses.TryGetValue(a.Id, out var previousStatus) && previousStatus != a.Status))
         {
-            if (_actionStatuses.TryGetValue(action.Id, out var previousStatus) && previousStatus != action.Status)
-            {
-                await _hubContext.Clients.All.SendAsync("ReceiveActionUpdate", action, cancellationToken);
-                _actionStatuses[action.Id] = action.Status;
-                _logger.LogDebug("Broadcasted action update: {Name} - {Status}", action.Name, action.Status);
-            }
+            await _hubContext.Clients.All.SendAsync("ReceiveActionUpdate", action, cancellationToken);
+            _actionStatuses[action.Id] = action.Status;
+            _logger.LogDebug("Broadcasted action update: {Name} - {Status}", action.Name, action.Status);
         }
 
         // Cleanup old IDs to prevent memory bloat

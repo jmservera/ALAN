@@ -14,6 +14,7 @@ public class AgentStateService : BackgroundService
     private AgentState _state = new();
     private readonly HashSet<string> _seenThoughtIds = new();
     private readonly HashSet<string> _seenActionIds = new();
+    private readonly Dictionary<string, ActionStatus> _actionStatuses = new();
 
     public AgentStateService(
         IHubContext<AgentHub> hubContext,
@@ -132,7 +133,19 @@ public class AgentStateService : BackgroundService
         {
             await _hubContext.Clients.All.SendAsync("ReceiveAction", action, cancellationToken);
             _seenActionIds.Add(action.Id);
-            _logger.LogDebug("Broadcasted action: {Name}", action.Name);
+            _actionStatuses[action.Id] = action.Status;
+            _logger.LogDebug("Broadcasted new action: {Name}", action.Name);
+        }
+
+        // Broadcast action updates when status changes
+        foreach (var action in actions.Where(a => _seenActionIds.Contains(a.Id)))
+        {
+            if (_actionStatuses.TryGetValue(action.Id, out var previousStatus) && previousStatus != action.Status)
+            {
+                await _hubContext.Clients.All.SendAsync("ReceiveActionUpdate", action, cancellationToken);
+                _actionStatuses[action.Id] = action.Status;
+                _logger.LogDebug("Broadcasted action update: {Name} - {Status}", action.Name, action.Status);
+            }
         }
 
         // Cleanup old IDs to prevent memory bloat

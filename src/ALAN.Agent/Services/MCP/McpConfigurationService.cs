@@ -3,6 +3,8 @@ using Microsoft.Agents.AI;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 using Microsoft.Extensions.AI;
+using ModelContextProtocol.Client;
+using ModelContextProtocol.Protocol;
 
 namespace ALAN.Agent.Services.MCP;
 
@@ -22,7 +24,7 @@ public class McpConfigurationService
     /// <summary>
     /// Load MCP configuration from YAML file and configure the agent with MCP tools.
     /// </summary>
-    public List<AITool>? ConfigureMcpTools(string configPath)
+    public async Task<List<AITool>?> ConfigureMcpTools(string configPath)
     {
         if (!File.Exists(configPath))
         {
@@ -58,11 +60,9 @@ public class McpConfigurationService
                 {
                     _logger.LogInformation("  Type: {Type}", server.Value.Type);
                     _logger.LogInformation("  URL: {Url}", server.Value.Url);
-#pragma warning disable MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-                    HostedMcpServerTool mcpTool = new HostedMcpServerTool(server.Key, server.Value.Url);
-                    mcpTool.ApprovalMode = HostedMcpServerToolApprovalMode.NeverRequire;
-                    mcpTool.ServerDescription = server.Value.Description ?? $"MCP Server {server.Key} Tool at {server.Value.Url}";
-#pragma warning restore MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+
+
+                    string? patToken = null;
                     if (!string.IsNullOrEmpty(server.Value.Pat))
                     {
                         if (server.Value.Pat.StartsWith("$"))
@@ -71,15 +71,32 @@ public class McpConfigurationService
                             var patValue = Environment.GetEnvironmentVariable(envVarName);
                             if (!string.IsNullOrEmpty(patValue))
                             {
-                                mcpTool.AuthorizationToken = patValue;
+                                patToken = patValue;
                             }
                         }
                         else
                         {
-                            mcpTool.AuthorizationToken = server.Value.Pat;
+                            patToken = server.Value.Pat;
                         }
                     }
-                    tools.Add(mcpTool);
+
+                    var clientTransport = new HttpClientTransport(
+                        new()
+                        {
+                            Endpoint = new Uri(server.Value.Url),
+                            AdditionalHeaders = new Dictionary<string, string>
+                            {
+                                { "User-Agent", "ALAN.Agent/MCPClient" },
+                                {"Authorization", !string.IsNullOrEmpty(patToken) ? $"Bearer {patToken}" : string.Empty }
+                            }
+                        }
+                    );
+
+                    var mcpClient = await McpClient.CreateAsync(clientTransport);
+                    var toolsFromServer = await mcpClient.ListToolsAsync();
+
+                    tools.AddRange(toolsFromServer);
+
                     _logger.LogInformation("  ✓ MCP tool '{ServerName}' added successfully", server.Key);
                 }
             }

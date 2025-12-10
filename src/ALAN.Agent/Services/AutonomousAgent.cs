@@ -190,7 +190,17 @@ Example:
 
             // Extract tool call information (minimal metadata)
             var toolCalls = ExtractToolCalls(result);
-
+            if (toolCalls != null && toolCalls.Count > 0)
+            {
+                _logger.LogInformation("Action used {Count} tool(s): {Tools}",
+                    toolCalls.Count,
+                    string.Join(", ", toolCalls.Select(t => t.ToolName)));
+            }
+            else
+            {
+                _logger.LogInformation("No tool calls detected in action execution");
+                _logger.LogTrace("Full Result: {Result} ", JsonSerializer.Serialize(result));
+            }
             // Record reasoning
             var reasoning = new AgentThought
             {
@@ -203,6 +213,22 @@ Example:
 
             // Parse and execute action
             await ParseAndExecuteActionAsync(response, cancellationToken);
+        }
+        catch (System.ClientModel.ClientResultException clientEx)
+        {
+            _logger.LogError(clientEx, "Azure OpenAI client error during thinking process. Status: {Status}",
+                clientEx.Status);
+
+            // Store API errors for learning
+            var errorMemory = new MemoryEntry
+            {
+                Type = MemoryType.Error,
+                Content = $"Azure OpenAI API error (Status {clientEx.Status}): {clientEx.Message}",
+                Summary = "API communication error",
+                Importance = 0.6,
+                Tags = new List<string> { "error", "api", "azure-openai" }
+            };
+            await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -228,10 +254,18 @@ Example:
 
         try
         {
+            // Try to extract JSON from the response (it might have additional text)
+            var jsonMatch = System.Text.RegularExpressions.Regex.Match(response, @"\{.*\}",
+                System.Text.RegularExpressions.RegexOptions.Singleline);
+
+            var jsonString = jsonMatch.Success ? jsonMatch.Value : response;
+
             // Try to parse as JSON
-            var actionPlan = JsonSerializer.Deserialize<ActionPlan>(response, new JsonSerializerOptions
+            var actionPlan = JsonSerializer.Deserialize<ActionPlan>(jsonString, new JsonSerializerOptions
             {
-                PropertyNameCaseInsensitive = true
+                PropertyNameCaseInsensitive = true,
+                AllowTrailingCommas = true,
+                ReadCommentHandling = JsonCommentHandling.Skip
             });
 
             if (actionPlan != null && !string.IsNullOrEmpty(actionPlan.Action))
@@ -285,6 +319,7 @@ Be specific about which tools you use and what you discover.";
                 else
                 {
                     _logger.LogInformation("No tool calls detected in action execution");
+                    _logger.LogTrace("Full Result: {Result} ", JsonSerializer.Serialize(result));
                 }
 
                 action.Status = ActionStatus.Completed;
@@ -295,15 +330,24 @@ Be specific about which tools you use and what you discover.";
                 _logger.LogInformation("Action completed: {Description}", action.Description);
             }
         }
-        catch (JsonException)
+        catch (JsonException jsonEx)
         {
             // If not valid JSON, just log as a thought
+            _logger.LogWarning(jsonEx, "Failed to parse action response as JSON. Response: {Response}",
+                response.Length > 200 ? response.Substring(0, 200) + "..." : response);
+
+            _logger.LogTrace("Full response: {Response}", response);
+
             var thought = new AgentThought
             {
                 Type = ThoughtType.Reflection,
                 Content = response
             };
             _stateManager.AddThought(thought);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error parsing and executing action");
         }
 
         _stateManager.UpdateStatus(AgentStatus.Idle);
@@ -313,59 +357,60 @@ Be specific about which tools you use and what you discover.";
     {
         try
         {
-            // Convert result to JSON with case-insensitive deserialization
-            var jsonOptions = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-            };
-
-            string resultJson = JsonSerializer.Serialize(result, jsonOptions);
-            _logger.LogTrace("Agent result JSON: {ResultJson}", resultJson);
-            var resultObj = JsonSerializer.Deserialize<JsonElement>(resultJson, jsonOptions);
-
-            // Now we can log safely with non-dynamic types
-            _logger.LogInformation("Extracting tool calls from result, JSON length: {Length}", resultJson.Length);
-
             var toolCalls = new List<ToolCall>();
 
-            // Try to find tool calls in various possible locations
-            JsonElement toolCallsElement;
-            if (resultObj.TryGetProperty("toolCalls", out toolCallsElement) ||
-                resultObj.TryGetProperty("ToolCalls", out toolCallsElement))
+            // Try to access Messages property
+            if (result.Messages != null)
             {
-                _logger.LogInformation("✓ Found {Count} tool calls in agent result", toolCallsElement.GetArrayLength());
-                foreach (var tc in toolCallsElement.EnumerateArray())
+                foreach (var message in result.Messages)
                 {
-                    var toolCall = new ToolCall
+                    if (message.Contents != null)
                     {
-                        ToolName = tc.TryGetProperty("name", out var name) ? name.GetString() ?? "unknown" : "unknown",
-                        Success = tc.TryGetProperty("status", out var status) ?
-                                  status.GetString()?.Equals("success", StringComparison.OrdinalIgnoreCase) ?? true : true
-                    };
+                        foreach (var content in message.Contents)
+                        {
+                            // Check if this is a tool call content by checking its type name
+                            var contentTypeName = content.GetType().Name;
 
-                    // Determine MCP server from tool name
-                    toolCall.McpServer = DetermineMcpServer(toolCall.ToolName);
+                            if (contentTypeName.Contains("ToolCall", StringComparison.OrdinalIgnoreCase))
+                            {
+                                try
+                                {
+                                    _logger.LogTrace("Found tool call content of type: {TypeName}", contentTypeName as string);
+                                    var toolCall = new ToolCall
+                                    {
+                                        ToolName = content.ToolCallId?.ToString() ?? content.ToString() ?? "unknown"
+                                    };
 
-                    // Get result if available (keep it short - max 200 chars)
-                    if (tc.TryGetProperty("result", out var tcResult))
-                    {
-                        var resultStr = tcResult.ToString();
-                        toolCall.Result = resultStr.Length > 200 ? resultStr.Substring(0, 200) + "..." : resultStr;
+                                    // Try to get more details if available
+                                    if (content.GetType().GetProperty("ToolName")?.GetValue(content) is string toolName)
+                                    {
+                                        toolCall.ToolName = toolName;
+                                    }
+
+                                    toolCall.McpServer = DetermineMcpServer(toolCall.ToolName);
+                                    toolCall.Success = true; // Assume success if we got the result
+
+                                    toolCalls.Add(toolCall);
+                                    _logger.LogInformation("Extracted tool call: {ToolName} from {McpServer}",
+                                        toolCall.ToolName, toolCall.McpServer ?? "unknown");
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(ex, "Failed to extract details from tool call content");
+                                }
+                            }
+                        }
                     }
-
-                    // Get duration if available
-                    if (tc.TryGetProperty("durationMs", out var duration))
-                    {
-                        toolCall.DurationMs = duration.GetDouble();
-                    }
-
-                    toolCalls.Add(toolCall);
                 }
+            }
+
+            if (toolCalls.Count > 0)
+            {
+                _logger.LogInformation("✓ Extracted {Count} tool calls from agent result", toolCalls.Count);
             }
             else
             {
-                _logger.LogInformation("No tool calls found in agent result");
+                _logger.LogDebug("No tool calls found in agent result");
             }
 
             return toolCalls.Count > 0 ? toolCalls : null;

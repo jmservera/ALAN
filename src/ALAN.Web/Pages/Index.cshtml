@@ -186,6 +186,10 @@
             addAction(action);
         });
 
+        connection.on("ReceiveActionUpdate", function (action) {
+            updateAction(action);
+        });
+
         connection.start()
             .then(() => {
                 document.getElementById("connection-status").textContent = "Connected";
@@ -274,6 +278,7 @@
             const thoughtDiv = document.createElement("div");
             thoughtDiv.className = "mb-3 p-2 border-start border-3 border-" + getThoughtTypeColor(thought.type);
             thoughtDiv.style.cursor = "pointer";
+            thoughtDiv.dataset.thoughtId = thought.id;
             thoughtDiv.onclick = () => showThoughtDetail(thought.id);
             thoughtDiv.innerHTML = `
                 <small class="text-muted">${new Date(thought.timestamp).toLocaleTimeString()}</small>
@@ -309,6 +314,7 @@
             const actionDiv = document.createElement("div");
             actionDiv.className = "mb-3 p-2 border rounded";
             actionDiv.style.cursor = "pointer";
+            actionDiv.dataset.actionId = action.id;
             actionDiv.onclick = () => showActionDetail(action.id);
             actionDiv.innerHTML = `
                 <div class="d-flex justify-content-between align-items-center">
@@ -326,6 +332,36 @@
             // Keep only last 15 actions
             while (container.children.length > 15) {
                 container.removeChild(container.lastChild);
+            }
+        }
+        
+        function updateAction(action) {
+            // Update action in the stored array
+            const index = actions.findIndex(a => a.id === action.id);
+            if (index !== -1) {
+                actions[index] = action;
+            }
+            
+            // Find and update the action element in the DOM
+            const container = document.getElementById("actions-container");
+            const element = container.querySelector(`[data-action-id="${action.id}"]`);
+            
+            if (element) {
+                // Check for MCP usage
+                const hasMcp = action.toolCalls && action.toolCalls.length > 0;
+                const mcpBadge = hasMcp ? `<span class="badge bg-info ms-1" title="${action.toolCalls.length} tool calls">🔧 ${action.toolCalls.length}</span>` : '';
+                
+                // Update the element's content
+                element.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center">
+                        <strong>${escapeHtml(action.name)}</strong>
+                        <span class="badge bg-${getActionStatusColor(action.status)}">${action.status}</span>
+                    </div>
+                    <small class="text-muted">${new Date(action.timestamp).toLocaleTimeString()}</small>
+                    ${mcpBadge}
+                    <p class="mb-0 mt-1">${escapeHtml(truncate(action.description, 150))}</p>
+                    ${action.output ? `<small class="text-success">Output: ${escapeHtml(truncate(action.output, 100))}</small>` : ''}
+                `;
             }
         }
 

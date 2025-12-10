@@ -107,16 +107,20 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     //                 // Load and configure MCP servers from YAML
     var mcpConfigPath = Path.Combine(AppContext.BaseDirectory, "mcp-config.yaml");
     var mcpService = sp.GetRequiredService<McpConfigurationService>();
-    var tools = mcpService.ConfigureMcpTools(mcpConfigPath);
+    var tools = mcpService.ConfigureMcpTools(mcpConfigPath).GetAwaiter().GetResult();
+
 
     AzureOpenAIClient azureClient;
+    AzureOpenAIClientOptions azureOptions = new AzureOpenAIClientOptions(
+        AzureOpenAIClientOptions.ServiceVersion.V2024_12_01_Preview
+    );
     if (!string.IsNullOrEmpty(apiKey))
     {
-        azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey));
+        azureClient = new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey), azureOptions);
     }
     else
     {
-        azureClient = new AzureOpenAIClient(new Uri(endpoint), new DefaultAzureCredential());
+        azureClient = new AzureOpenAIClient(new Uri(endpoint), new DefaultAzureCredential(), azureOptions);
     }
 
 
@@ -126,7 +130,7 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     {
         foreach (var tool in tools)
         {
-            logger.LogInformation("  - Tool available: {ToolType}", tool.GetType().Name);
+            logger.LogInformation("  - Tool available: {ToolType} {ToolName}", tool.GetType().Name, tool.Name);
         }
     }
     else

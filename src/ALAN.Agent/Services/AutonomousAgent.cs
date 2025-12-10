@@ -163,18 +163,24 @@ public class AutonomousAgent
         // Get AI response
         var prompt = $@"You are an autonomous agent. Your current directive is: {_currentPrompt}
 
+You have access to the following tools:
+- GitHub MCP Server: Query repositories, read files, search code, view commits
+- Microsoft Learn MCP Server: Fetch documentation, search learning resources
+
 Previous thoughts and actions are stored in your memory.
-Think about what you should do next. Be creative and thoughtful.
+Think about what you should do next. Use the available tools when they would be helpful.
+For example, you can search GitHub for code examples, read documentation from Microsoft Learn, or analyze repository files.
+
 Respond with a JSON object containing:
-- reasoning: your thought process
+- reasoning: your thought process (mention if you plan to use any tools)
 - action: what you plan to do
 - goal: what you're trying to achieve
 
 Example:
 {{
-  ""reasoning"": ""I should explore new concepts"",
-  ""action"": ""Learn about quantum computing"",
-  ""goal"": ""Expand my knowledge base""
+  ""reasoning"": ""I should search GitHub for examples of autonomous agents to learn from them"",
+  ""action"": ""Search GitHub repositories for autonomous agent implementations"",
+  ""goal"": ""Learn from existing autonomous agent projects""
 }}";
 
         try
@@ -249,18 +255,37 @@ Reasoning: {actionPlan.Reasoning}
 
 Action to Execute: {actionPlan.Action}
 
-Please execute this action and provide:
-1. Steps you took to complete the action
+You have access to the following tools:
+- GitHub MCP Server: Search repositories, read code files, view commits, search code
+- Microsoft Learn MCP Server: Fetch documentation and learning resources
+
+Please execute this action using the available tools when appropriate. For example:
+- If learning about a topic, use Microsoft Learn to fetch relevant documentation
+- If analyzing code or repositories, use GitHub to search and read files
+- If researching patterns or examples, search GitHub for relevant projects
+
+Provide:
+1. Steps you took to complete the action (mention any tools used)
 2. Any observations or insights gained
 3. Challenges encountered (if any)
 4. Next steps or recommendations
 
-Be specific and detailed in your response.";
+Be specific about which tools you use and what you discover.";
                 // Simulate action execution
                 var result = await _agent.RunAsync(prompt, _thread, cancellationToken: cancellationToken);
 
                 // Extract tool calls from action execution
                 var toolCalls = ExtractToolCalls(result);
+                if (toolCalls != null && toolCalls.Count > 0)
+                {
+                    _logger.LogInformation("Action used {Count} tool(s): {Tools}",
+                        toolCalls.Count,
+                        string.Join(", ", toolCalls.Select(t => t.ToolName)));
+                }
+                else
+                {
+                    _logger.LogInformation("No tool calls detected in action execution");
+                }
 
                 action.Status = ActionStatus.Completed;
                 action.Output = $"Completed: {result.Text}";
@@ -295,8 +320,12 @@ Be specific and detailed in your response.";
                 DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
             };
 
-            var resultJson = JsonSerializer.Serialize(result, jsonOptions);
+            string resultJson = JsonSerializer.Serialize(result, jsonOptions);
+            _logger.LogTrace("Agent result JSON: {ResultJson}", resultJson);
             var resultObj = JsonSerializer.Deserialize<JsonElement>(resultJson, jsonOptions);
+
+            // Now we can log safely with non-dynamic types
+            _logger.LogInformation("Extracting tool calls from result, JSON length: {Length}", resultJson.Length);
 
             var toolCalls = new List<ToolCall>();
 
@@ -305,6 +334,7 @@ Be specific and detailed in your response.";
             if (resultObj.TryGetProperty("toolCalls", out toolCallsElement) ||
                 resultObj.TryGetProperty("ToolCalls", out toolCallsElement))
             {
+                _logger.LogInformation("✓ Found {Count} tool calls in agent result", toolCallsElement.GetArrayLength());
                 foreach (var tc in toolCallsElement.EnumerateArray())
                 {
                     var toolCall = new ToolCall
@@ -332,6 +362,10 @@ Be specific and detailed in your response.";
 
                     toolCalls.Add(toolCall);
                 }
+            }
+            else
+            {
+                _logger.LogInformation("No tool calls found in agent result");
             }
 
             return toolCalls.Count > 0 ? toolCalls : null;

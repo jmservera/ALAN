@@ -1,4 +1,5 @@
 using ALAN.Shared.Models;
+using ALAN.Shared.Services.Memory;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ALAN.Web.Controllers;
@@ -8,15 +9,18 @@ namespace ALAN.Web.Controllers;
 public class HumanInputController : ControllerBase
 {
     private readonly ILogger<HumanInputController> _logger;
-    // TODO: Connect to actual agent when running together
+    private readonly IShortTermMemoryService _shortTermMemory;
     
-    public HumanInputController(ILogger<HumanInputController> logger)
+    public HumanInputController(
+        ILogger<HumanInputController> logger,
+        IShortTermMemoryService shortTermMemory)
     {
         _logger = logger;
+        _shortTermMemory = shortTermMemory;
     }
     
     [HttpPost("input")]
-    public IActionResult SubmitInput([FromBody] HumanInput input)
+    public async Task<IActionResult> SubmitInput([FromBody] HumanInput input, CancellationToken cancellationToken)
     {
         if (input == null)
         {
@@ -25,8 +29,12 @@ public class HumanInputController : ControllerBase
 
         _logger.LogInformation("Received human input: {Type} - {Content}", input.Type, input.Content);
         
-        // TODO: Forward to agent's HumanInputHandler when integration is complete
-        // For now, just log and acknowledge
+        // Store input in short-term memory for agent to pick up
+        await _shortTermMemory.SetAsync(
+            $"human-input:{input.Id}",
+            input,
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
         
         return Ok(new
         {
@@ -37,7 +45,7 @@ public class HumanInputController : ControllerBase
     }
     
     [HttpPost("prompt")]
-    public IActionResult UpdatePrompt([FromBody] UpdatePromptRequest request)
+    public async Task<IActionResult> UpdatePrompt([FromBody] UpdatePromptRequest request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request?.Prompt))
         {
@@ -52,7 +60,12 @@ public class HumanInputController : ControllerBase
             Content = request.Prompt
         };
         
-        // TODO: Forward to agent
+        // Store input in short-term memory for agent to pick up
+        await _shortTermMemory.SetAsync(
+            $"human-input:{input.Id}",
+            input,
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
         
         return Ok(new
         {
@@ -62,7 +75,7 @@ public class HumanInputController : ControllerBase
     }
     
     [HttpPost("pause")]
-    public IActionResult PauseAgent()
+    public async Task<IActionResult> PauseAgent(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Received pause command");
         
@@ -72,13 +85,18 @@ public class HumanInputController : ControllerBase
             Content = "Pause requested"
         };
         
-        // TODO: Forward to agent
+        // Store input in short-term memory for agent to pick up
+        await _shortTermMemory.SetAsync(
+            $"human-input:{input.Id}",
+            input,
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
         
         return Ok(new { message = "Agent pause queued" });
     }
     
     [HttpPost("resume")]
-    public IActionResult ResumeAgent()
+    public async Task<IActionResult> ResumeAgent(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Received resume command");
         
@@ -88,13 +106,18 @@ public class HumanInputController : ControllerBase
             Content = "Resume requested"
         };
         
-        // TODO: Forward to agent
+        // Store input in short-term memory for agent to pick up
+        await _shortTermMemory.SetAsync(
+            $"human-input:{input.Id}",
+            input,
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
         
         return Ok(new { message = "Agent resume queued" });
     }
     
     [HttpPost("batch-learning")]
-    public IActionResult TriggerBatchLearning()
+    public async Task<IActionResult> TriggerBatchLearning(CancellationToken cancellationToken)
     {
         _logger.LogInformation("Received batch learning trigger");
         
@@ -104,7 +127,12 @@ public class HumanInputController : ControllerBase
             Content = "Batch learning trigger"
         };
         
-        // TODO: Forward to agent
+        // Store input in short-term memory for agent to pick up
+        await _shortTermMemory.SetAsync(
+            $"human-input:{input.Id}",
+            input,
+            TimeSpan.FromMinutes(5),
+            cancellationToken);
         
         return Ok(new { message = "Batch learning trigger queued" });
     }

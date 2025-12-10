@@ -57,6 +57,10 @@ public class HumanInputHandler
         // Check for chat requests in memory
         await ProcessChatRequestsAsync(cancellationToken);
 
+        // Check for human inputs in memory
+        await ProcessHumanInputsFromMemoryAsync(agent, cancellationToken);
+
+        // Process inputs from the queue
         while (_inputQueue.TryDequeue(out var input))
         {
             try
@@ -78,6 +82,42 @@ public class HumanInputHandler
         }
 
         return responses;
+    }
+
+    private async Task ProcessHumanInputsFromMemoryAsync(AutonomousAgent agent, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Look for human inputs in short-term memory
+            var keys = await _shortTermMemory.GetKeysAsync("human-input:*", cancellationToken);
+            
+            foreach (var key in keys)
+            {
+                var input = await _shortTermMemory.GetAsync<HumanInput>(key, cancellationToken);
+                if (input != null && !input.Processed)
+                {
+                    _logger.LogInformation("Processing human input from memory: {Type}", input.Type);
+                    
+                    try
+                    {
+                        await ProcessInputAsync(input, agent, cancellationToken);
+                        
+                        // Mark as processed and remove from memory
+                        input.Processed = true;
+                        await _shortTermMemory.DeleteAsync(key, cancellationToken);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error processing human input from memory {Id}", input.Id);
+                        await _shortTermMemory.DeleteAsync(key, cancellationToken);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing human inputs from memory");
+        }
     }
 
     private async Task ProcessChatRequestsAsync(CancellationToken cancellationToken)

@@ -1,10 +1,11 @@
 using ALAN.Shared.Models;
+using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
-namespace ALAN.Shared.Services.Memory;
+namespace ALAN.Agent.Services;
 
 /// <summary>
 /// Service for consolidating memories and extracting learnings.

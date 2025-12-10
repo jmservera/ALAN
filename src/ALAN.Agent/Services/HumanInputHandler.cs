@@ -69,7 +69,7 @@ public class HumanInputHandler
         return responses;
     }
 
-    private async Task<HumanInputResponse> ProcessInputAsync(HumanInput input, AutonomousAgent agent, CancellationToken cancellationToken)
+    private Task<HumanInputResponse> ProcessInputAsync(HumanInput input, AutonomousAgent agent, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Processing human input: {Type}", input.Type);
 
@@ -77,44 +77,44 @@ public class HumanInputHandler
         {
             case HumanInputType.UpdatePrompt:
                 agent.UpdatePrompt(input.Content);
-                return new HumanInputResponse
+                return Task.FromResult(new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Prompt updated successfully"
-                };
+                });
 
             case HumanInputType.PauseAgent:
                 agent.Pause();
-                return new HumanInputResponse
+                return Task.FromResult(new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Agent paused"
-                };
+                });
 
             case HumanInputType.ResumeAgent:
                 agent.Resume();
-                return new HumanInputResponse
+                return Task.FromResult(new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Agent resumed"
-                };
+                });
 
             case HumanInputType.TriggerBatchLearning:
                 // This would trigger the batch learning process
                 _logger.LogInformation("Batch learning trigger requested by human");
-                return new HumanInputResponse
+                return Task.FromResult(new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Batch learning will be triggered in next iteration"
-                };
+                });
 
             case HumanInputType.QueryState:
                 var state = _stateManager.GetCurrentState();
-                return new HumanInputResponse
+                return Task.FromResult(new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
@@ -123,25 +123,25 @@ public class HumanInputHandler
                     {
                         ["state"] = state
                     }
-                };
+                });
 
             case HumanInputType.AddGoal:
                 _stateManager.UpdateGoal(input.Content);
-                return new HumanInputResponse
+                return Task.FromResult(new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = $"Goal updated to: {input.Content}"
-                };
+                });
 
             default:
                 _logger.LogWarning("Unknown input type: {Type}", input.Type);
-                return new HumanInputResponse
+                return Task.FromResult(new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = false,
                     Message = $"Unknown input type: {input.Type}"
-                };
+                });
         }
     }
 

@@ -1,7 +1,7 @@
 using ALAN.Agent.Services;
-using ALAN.Shared.Services.Memory;
 using ALAN.Agent.Services.MCP;
 using ALAN.Agent.Plugins;
+using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

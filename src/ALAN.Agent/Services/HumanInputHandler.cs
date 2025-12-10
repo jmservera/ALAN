@@ -1,5 +1,7 @@
 using ALAN.Shared.Models;
+using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Agents.AI;
 using System.Collections.Concurrent;
 
 namespace ALAN.Agent.Services;
@@ -13,14 +15,20 @@ public class HumanInputHandler
     private readonly ConcurrentQueue<HumanInput> _inputQueue = new();
     private readonly ILogger<HumanInputHandler> _logger;
     private readonly StateManager _stateManager;
+    private readonly IShortTermMemoryService _shortTermMemory;
+    private readonly AIAgent _aiAgent;
     private AutonomousAgent? _agent;
 
     public HumanInputHandler(
         ILogger<HumanInputHandler> logger,
-        StateManager stateManager)
+        StateManager stateManager,
+        IShortTermMemoryService shortTermMemory,
+        AIAgent aiAgent)
     {
         _logger = logger;
         _stateManager = stateManager;
+        _shortTermMemory = shortTermMemory;
+        _aiAgent = aiAgent;
     }
 
     public void SetAgent(AutonomousAgent agent)
@@ -46,6 +54,9 @@ public class HumanInputHandler
     {
         var responses = new List<HumanInputResponse>();
 
+        // Check for chat requests in memory
+        await ProcessChatRequestsAsync(cancellationToken);
+
         while (_inputQueue.TryDequeue(out var input))
         {
             try
@@ -67,6 +78,84 @@ public class HumanInputHandler
         }
 
         return responses;
+    }
+
+    private async Task ProcessChatRequestsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Look for chat requests in short-term memory
+            var keys = await _shortTermMemory.GetKeysAsync("chat-request:*", cancellationToken);
+            
+            foreach (var key in keys)
+            {
+                var chatRequest = await _shortTermMemory.GetAsync<HumanInput>(key, cancellationToken);
+                if (chatRequest != null && chatRequest.Type == HumanInputType.ChatWithAgent)
+                {
+                    _logger.LogInformation("Processing chat request: {Content}", chatRequest.Content);
+                    
+                    try
+                    {
+                        // Get a new thread for this chat conversation
+                        var chatThread = _aiAgent.GetNewThread();
+                        
+                        // Create a prompt that includes context about the agent's knowledge
+                        var prompt = $@"You are ALAN, an autonomous AI agent. A human user is chatting with you to learn about your knowledge and capabilities.
+
+User message: {chatRequest.Content}
+
+Please respond naturally and helpfully. You can share:
+- Your current goals and what you're learning
+- Your capabilities and the tools you have access to
+- Your thoughts on self-improvement and learning
+- Any insights from your memory and experiences
+
+Keep your response concise and conversational.";
+
+                        var result = await _aiAgent.RunAsync(prompt, chatThread, cancellationToken: cancellationToken);
+                        var responseText = result.Text ?? result.ToString();
+
+                        // Store the response
+                        var chatResponse = new ChatResponse
+                        {
+                            MessageId = chatRequest.Id,
+                            Response = responseText,
+                            Timestamp = DateTime.UtcNow
+                        };
+
+                        await _shortTermMemory.SetAsync(
+                            $"chat-response:{chatRequest.Id}",
+                            chatResponse,
+                            TimeSpan.FromMinutes(5),
+                            cancellationToken);
+
+                        _logger.LogInformation("Chat response generated for request {Id}", chatRequest.Id);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Error generating chat response");
+                        
+                        // Store error response
+                        var errorResponse = new ChatResponse
+                        {
+                            MessageId = chatRequest.Id,
+                            Response = "I'm sorry, I encountered an error processing your message. Please try again.",
+                            Timestamp = DateTime.UtcNow
+                        };
+
+                        await _shortTermMemory.SetAsync(
+                            $"chat-response:{chatRequest.Id}",
+                            errorResponse,
+                            TimeSpan.FromMinutes(5),
+                            cancellationToken);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing chat requests");
+        }
     }
 
     private Task<HumanInputResponse> ProcessInputAsync(HumanInput input, AutonomousAgent agent, CancellationToken cancellationToken)
@@ -132,6 +221,15 @@ public class HumanInputHandler
                     InputId = input.Id,
                     Success = true,
                     Message = $"Goal updated to: {input.Content}"
+                });
+
+            case HumanInputType.ChatWithAgent:
+                // Chat requests are handled separately in ProcessChatRequestsAsync
+                return Task.FromResult(new HumanInputResponse
+                {
+                    InputId = input.Id,
+                    Success = true,
+                    Message = "Chat request processed"
                 });
 
             default:

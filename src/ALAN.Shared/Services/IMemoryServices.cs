@@ -39,4 +39,5 @@ public interface IMemoryConsolidationService
     Task<bool> StoreLearningAsync(ConsolidatedLearning learning, CancellationToken cancellationToken = default);
     Task<List<MemoryEntry>> IdentifyOutdatedMemoriesAsync(CancellationToken cancellationToken = default);
     Task<int> CleanupOutdatedMemoriesAsync(CancellationToken cancellationToken = default);
+    Task ConsolidateShortTermMemoryAsync(CancellationToken cancellationToken = default);
 }

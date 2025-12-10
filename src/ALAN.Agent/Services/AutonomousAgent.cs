@@ -160,17 +160,6 @@ public class AutonomousAgent
         _stateManager.AddThought(observation);
         _logger.LogInformation("Agent observed: {Content}", observation.Content);
 
-        // Store observation to long-term memory
-        var observationMemory = new MemoryEntry
-        {
-            Type = MemoryType.Observation,
-            Content = _currentPrompt,
-            Summary = "Agent observation",
-            Importance = 0.3,
-            Tags = new List<string> { "observation", "system" }
-        };
-        await _longTermMemory.StoreMemoryAsync(observationMemory, cancellationToken);
-
         // Get AI response
         var prompt = $@"You are an autonomous agent. Your current directive is: {_currentPrompt}
 
@@ -202,17 +191,6 @@ Example:
             _stateManager.AddThought(reasoning);
             _logger.LogInformation("Agent reasoning: {Content}", response);
 
-            // Store reasoning to long-term memory
-            var reasoningMemory = new MemoryEntry
-            {
-                Type = MemoryType.Decision,
-                Content = response,
-                Summary = "Agent reasoning and decision",
-                Importance = 0.6,
-                Tags = new List<string> { "reasoning", "decision" }
-            };
-            await _longTermMemory.StoreMemoryAsync(reasoningMemory, cancellationToken);
-
             // Parse and execute action
             await ParseAndExecuteActionAsync(response, cancellationToken);
         }
@@ -220,7 +198,8 @@ Example:
         {
             _logger.LogError(ex, "Error during thinking process");
 
-            // Store error to long-term memory
+            // Store critical errors directly to long-term memory for persistence
+            // (errors are important enough to skip short-term storage)
             var errorMemory = new MemoryEntry
             {
                 Type = MemoryType.Error,
@@ -281,17 +260,6 @@ Be specific and detailed in your response.";
                 _stateManager.UpdateAction(action);
 
                 _logger.LogInformation("Action completed: {Description}", action.Description);
-
-                // Store successful action to long-term memory
-                var actionMemory = new MemoryEntry
-                {
-                    Type = MemoryType.Success,
-                    Content = $"Action: {action.Description}\nResult: {action.Output}",
-                    Summary = action.Name,
-                    Importance = 0.5,
-                    Tags = new List<string> { "action", "success" }
-                };
-                await _longTermMemory.StoreMemoryAsync(actionMemory, cancellationToken);
             }
         }
         catch (JsonException)

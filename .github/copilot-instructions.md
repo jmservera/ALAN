@@ -117,14 +117,21 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 2. `AutonomousAgent.RunAsync()` runs the infinite loop
 3. `UsageTracker.CanExecuteLoop()` checks daily limits
 4. `ThinkAndActAsync()` generates thoughts and actions
-5. `StateManager` persists to storage
+5. `StateManager` stores thoughts/actions to **short-term memory only** (8-hour TTL)
+6. `MemoryConsolidationService.ConsolidateShortTermMemoryAsync()` runs every 6 hours to:
+   - Read thoughts and actions from short-term memory
+   - Evaluate importance of each item
+   - Promote important items (importance ≥ 0.5) to long-term memory with "consolidated" tag
+   - Extract learnings from consolidated memories
 
 ### Web Update Flow
 
-1. `AgentStateService` polls storage
-2. `StateController.GetState()` provides API endpoint
-3. `AgentHub` broadcasts via SignalR
-4. `Index.cshtml` updates UI in real-time
+1. `AgentStateService` polls **short-term memory** every 500ms
+2. Retrieves current state from `agent:current-state` key
+3. Retrieves thoughts from `thought:*` keys
+4. Retrieves actions from `action:*` keys
+5. `AgentHub` broadcasts via SignalR
+6. `Index.cshtml` updates UI in real-time
 
 ## Troubleshooting Guide
 
@@ -135,7 +142,8 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 → Review `COST_CONTROL.md` and `UsageTracker` configuration
 
 **No thoughts/actions appearing:**
-→ Check `StateManager.AddThought()` and storage persistence
+→ Check `StateManager.AddThought()` and short-term memory storage
+→ Verify `AgentStateService` is reading from short-term memory correctly
 
 **SignalR connection failed:**
 → Falls back to polling mode automatically (see `Index.cshtml`)
@@ -148,6 +156,8 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 - **Agent Loop Interval**: 5 seconds (configurable in `AutonomousAgent`)
 - **Cost Limits**: See `UsageTracker` (default: 4000 loops/day, 8M tokens/day)
 - **Storage**: Azurite on port 10000 (local), Azure Blob Storage (production)
+- **Short-term Memory TTL**: 8 hours for thoughts/actions, 1 hour for agent state
+- **Memory Consolidation**: Runs every 6 hours to promote important items to long-term storage
 - **UI Updates**: SignalR with polling fallback every 5 seconds
 
 For detailed setup instructions, see `QUICKSTART.md`.

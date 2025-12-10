@@ -14,7 +14,7 @@ public class AgentStateService : BackgroundService
     private AgentState _state = new();
     private readonly HashSet<string> _seenThoughtIds = new();
     private readonly HashSet<string> _seenActionIds = new();
-    
+
     public AgentStateService(
         IHubContext<AgentHub> hubContext,
         ILogger<AgentStateService> logger,
@@ -26,15 +26,15 @@ public class AgentStateService : BackgroundService
         _shortTermMemory = shortTermMemory;
         _longTermMemory = longTermMemory;
     }
-    
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Agent State Service starting (pull mode - reading from shared memory)...");
-        
+
         // Initial state
         _state.CurrentGoal = "Waiting for autonomous agent to start";
         _state.Status = AgentStatus.Idle;
-        
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -52,73 +52,53 @@ public class AgentStateService : BackgroundService
                 await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
         }
-        
+
         _logger.LogInformation("Agent State Service stopped");
     }
 
     private async Task PullStateFromMemoryAsync(CancellationToken cancellationToken)
     {
-        // Pull current state from long-term memory (shared across processes)
-        var stateMemories = await _longTermMemory.GetRecentMemoriesAsync(1, cancellationToken);
-        var stateMemory = stateMemories.FirstOrDefault(m => m.Tags.Contains("agent-state"));
-        
-        AgentState? currentState = null;
-        if (stateMemory != null)
+        // Pull current state from short-term memory (agent stores it there)
+        var currentState = await _shortTermMemory.GetAsync<AgentState>("agent:current-state", cancellationToken);
+
+        // Pull recent thoughts from short-term memory
+        var thoughtKeys = await _shortTermMemory.GetKeysAsync("thought:*", cancellationToken);
+        var thoughts = new List<AgentThought>();
+
+        foreach (var key in thoughtKeys)
         {
-            try
+            var thought = await _shortTermMemory.GetAsync<AgentThought>(key, cancellationToken);
+            if (thought != null)
             {
-                currentState = System.Text.Json.JsonSerializer.Deserialize<AgentState>(stateMemory.Content);
-            }
-            catch
-            {
-                // Failed to deserialize, will use default state
+                thoughts.Add(thought);
             }
         }
-        
-        // Pull recent thoughts and actions from long-term memory
-        var recentThoughts = await _longTermMemory.GetRecentMemoriesAsync(20, cancellationToken);
-        var recentActions = await _longTermMemory.GetRecentMemoriesAsync(15, cancellationToken);
-        
-        // Convert memories back to thoughts and actions
-        var thoughts = recentThoughts
-            .Where(m => m.Tags.Contains("thought"))
-            .Select(m => new AgentThought
+
+        // Pull recent actions from short-term memory
+        var actionKeys = await _shortTermMemory.GetKeysAsync("action:*", cancellationToken);
+        var actions = new List<AgentAction>();
+
+        foreach (var key in actionKeys)
+        {
+            var action = await _shortTermMemory.GetAsync<AgentAction>(key, cancellationToken);
+            if (action != null)
             {
-                Id = m.Id,
-                Type = m.Type switch
-                {
-                    MemoryType.Observation => ThoughtType.Observation,
-                    MemoryType.Decision => ThoughtType.Reasoning,
-                    MemoryType.Reflection => ThoughtType.Reflection,
-                    _ => ThoughtType.Observation
-                },
-                Content = m.Content,
-                Timestamp = m.Timestamp
-            })
-            .OrderBy(t => t.Timestamp)
-            .ToList();
-            
-        var actions = recentActions
-            .Where(m => m.Tags.Contains("action"))
-            .Select(m => new AgentAction
-            {
-                Id = m.Id,
-                Name = m.Tags.FirstOrDefault(t => t != "action" && !t.Contains("completed") && !t.Contains("pending")) ?? "unknown",
-                Description = m.Summary,
-                Status = m.Tags.Contains("completed") ? ActionStatus.Completed : ActionStatus.Pending,
-                Timestamp = m.Timestamp
-            })
-            .OrderBy(a => a.Timestamp)
-            .ToList();
-        
+                actions.Add(action);
+            }
+        }
+
+        // Sort by timestamp
+        thoughts = thoughts.OrderBy(t => t.Timestamp).ToList();
+        actions = actions.OrderBy(a => a.Timestamp).ToList();
+
         if (currentState != null)
         {
-            var stateChanged = _state.Status != currentState.Status || 
+            var stateChanged = _state.Status != currentState.Status ||
                               _state.CurrentGoal != currentState.CurrentGoal ||
                               _state.CurrentPrompt != currentState.CurrentPrompt;
 
             _state = currentState;
-            
+
             if (stateChanged)
             {
                 await _hubContext.Clients.All.SendAsync("ReceiveStateUpdate", _state, cancellationToken);
@@ -170,7 +150,7 @@ public class AgentStateService : BackgroundService
                 _seenActionIds.Remove(id);
         }
     }
-    
+
     public AgentState GetCurrentState()
     {
         return _state;

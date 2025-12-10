@@ -18,6 +18,7 @@ public class AgentHostedService : BackgroundService
     private readonly IShortTermMemoryService _shortTermMemory;
     private readonly BatchLearningService _batchLearningService;
     private readonly HumanInputHandler _humanInputHandler;
+    private readonly IMemoryConsolidationService _memoryConsolidation;
     private AutonomousAgent? _agent;
 
     public AgentHostedService(
@@ -29,7 +30,8 @@ public class AgentHostedService : BackgroundService
         ILongTermMemoryService longTermMemory,
         IShortTermMemoryService shortTermMemory,
         BatchLearningService batchLearningService,
-        HumanInputHandler humanInputHandler)
+        HumanInputHandler humanInputHandler,
+        IMemoryConsolidationService memoryConsolidation)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -40,6 +42,7 @@ public class AgentHostedService : BackgroundService
         _shortTermMemory = shortTermMemory;
         _batchLearningService = batchLearningService;
         _humanInputHandler = humanInputHandler;
+        _memoryConsolidation = memoryConsolidation;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -56,6 +59,9 @@ public class AgentHostedService : BackgroundService
             _batchLearningService,
             _humanInputHandler);
 
+        // Start memory consolidation background task
+        var consolidationTask = RunMemoryConsolidationAsync(stoppingToken);
+
         try
         {
             await _agent.RunAsync(stoppingToken);
@@ -64,6 +70,43 @@ public class AgentHostedService : BackgroundService
         {
             _logger.LogError(ex, "Fatal error in agent");
         }
+
+        // Wait for consolidation task to complete
+        await consolidationTask;
+    }
+
+    private async Task RunMemoryConsolidationAsync(CancellationToken stoppingToken)
+    {
+        _logger.LogInformation("Memory consolidation task starting...");
+
+        // Wait before first consolidation to allow some memories to accumulate
+        await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                _logger.LogInformation("Running memory consolidation...");
+                await _memoryConsolidation.ConsolidateShortTermMemoryAsync(stoppingToken);
+                _logger.LogInformation("Memory consolidation completed");
+
+                // Run consolidation every 6 hours (well before 8-hour short-term TTL expires)
+                await Task.Delay(TimeSpan.FromHours(6), stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogInformation("Memory consolidation cancelled");
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during memory consolidation");
+                // Wait a bit before retrying
+                await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken);
+            }
+        }
+
+        _logger.LogInformation("Memory consolidation task stopped");
     }
 
     public override Task StopAsync(CancellationToken cancellationToken)

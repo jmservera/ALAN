@@ -14,16 +14,22 @@ namespace ALAN.Agent.Services;
 public class MemoryConsolidationService : IMemoryConsolidationService
 {
     private readonly ILongTermMemoryService _longTermMemory;
+    private readonly IShortTermMemoryService _shortTermMemory;
+    private readonly StateManager _stateManager;
     private readonly AIAgent _agent;
     private readonly ILogger<MemoryConsolidationService> _logger;
     private readonly List<ConsolidatedLearning> _learnings = new();
 
     public MemoryConsolidationService(
         ILongTermMemoryService longTermMemory,
+        IShortTermMemoryService shortTermMemory,
+        StateManager stateManager,
         AIAgent agent,
         ILogger<MemoryConsolidationService> logger)
     {
         _longTermMemory = longTermMemory;
+        _shortTermMemory = shortTermMemory;
+        _stateManager = stateManager;
         _agent = agent;
         _logger = logger;
     }
@@ -133,6 +139,131 @@ Respond with ONLY a JSON object in this format:
 
         _logger.LogInformation("Extracted {Count} learnings", learnings.Count);
         return learnings;
+    }
+
+    /// <summary>
+    /// Consolidate short-term thoughts and actions into long-term memory.
+    /// This is the main method called daily to promote important items from short-term to long-term storage.
+    /// </summary>
+    public async Task ConsolidateShortTermMemoryAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Starting short-term memory consolidation");
+
+        // Retrieve all thoughts and actions from short-term memory
+        var thoughts = await _stateManager.GetAllThoughtsFromMemoryAsync(cancellationToken);
+        var actions = await _stateManager.GetAllActionsFromMemoryAsync(cancellationToken);
+
+        _logger.LogInformation("Retrieved {ThoughtCount} thoughts and {ActionCount} actions from short-term memory",
+            thoughts.Count, actions.Count);
+
+        // Convert thoughts to memory entries and store important ones
+        int thoughtsStored = 0;
+        foreach (var thought in thoughts)
+        {
+            var importance = CalculateThoughtImportance(thought);
+
+            // Only store thoughts with sufficient importance
+            if (importance >= 0.5)
+            {
+                var memory = new MemoryEntry
+                {
+                    Id = thought.Id,
+                    Type = thought.Type switch
+                    {
+                        ThoughtType.Observation => MemoryType.Observation,
+                        ThoughtType.Reasoning => MemoryType.Decision,
+                        ThoughtType.Reflection => MemoryType.Reflection,
+                        _ => MemoryType.Observation
+                    },
+                    Content = thought.Content,
+                    Summary = $"{thought.Type}: {thought.Content.Substring(0, Math.Min(100, thought.Content.Length))}...",
+                    Importance = importance,
+                    Tags = new List<string> { "consolidated", "thought", thought.Type.ToString().ToLower() },
+                    Timestamp = thought.Timestamp
+                };
+
+                await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
+                thoughtsStored++;
+            }
+        }
+
+        // Convert actions to memory entries and store important ones
+        int actionsStored = 0;
+        foreach (var action in actions)
+        {
+            var importance = CalculateActionImportance(action);
+
+            // Only store actions with sufficient importance
+            if (importance >= 0.5)
+            {
+                var memory = new MemoryEntry
+                {
+                    Id = action.Id,
+                    Type = action.Status == ActionStatus.Completed ? MemoryType.Success : MemoryType.Decision,
+                    Content = $"Action: {action.Name}\nDescription: {action.Description}\nInput: {action.Input}\nOutput: {action.Output}",
+                    Summary = $"{action.Name}: {action.Description}",
+                    Importance = importance,
+                    Tags = new List<string> { "consolidated", "action", action.Status.ToString().ToLower(), action.Name.ToLower() },
+                    Timestamp = action.Timestamp
+                };
+
+                await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
+                actionsStored++;
+            }
+        }
+
+        _logger.LogInformation("Consolidated {ThoughtCount}/{TotalThoughts} thoughts and {ActionCount}/{TotalActions} actions to long-term memory",
+            thoughtsStored, thoughts.Count, actionsStored, actions.Count);
+
+        // Extract learnings from the consolidated memories
+        var learnings = await ExtractLearningsAsync(DateTime.UtcNow.AddHours(-24), cancellationToken);
+
+        foreach (var learning in learnings)
+        {
+            await StoreLearningAsync(learning, cancellationToken);
+        }
+    }
+
+    private double CalculateThoughtImportance(AgentThought thought)
+    {
+        // Base importance by type
+        double importance = thought.Type switch
+        {
+            ThoughtType.Observation => 0.3,
+            ThoughtType.Reasoning => 0.7,
+            ThoughtType.Reflection => 0.8,
+            _ => 0.5
+        };
+
+        // Increase importance for longer, more detailed thoughts
+        if (thought.Content.Length > 200)
+        {
+            importance += 0.1;
+        }
+
+        // Cap at 1.0
+        return Math.Min(1.0, importance);
+    }
+
+    private double CalculateActionImportance(AgentAction action)
+    {
+        // Base importance by status
+        double importance = action.Status switch
+        {
+            ActionStatus.Completed => 0.7,
+            ActionStatus.Failed => 0.6,
+            ActionStatus.Running => 0.4,
+            _ => 0.3
+        };
+
+        // Increase importance for actions with output (they produced results)
+        if (!string.IsNullOrEmpty(action.Output))
+        {
+            importance += 0.2;
+        }
+
+        // Cap at 1.0
+        return Math.Min(1.0, importance);
     }
 
     public async Task<bool> StoreLearningAsync(ConsolidatedLearning learning, CancellationToken cancellationToken = default)

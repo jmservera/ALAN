@@ -13,7 +13,7 @@ public class StateManager
     private readonly object _lock = new();
     private readonly IShortTermMemoryService _shortTermMemory;
     private readonly ILongTermMemoryService _longTermMemory;
-    
+
     public event EventHandler<AgentState>? StateChanged;
 
     public StateManager(IShortTermMemoryService shortTermMemory, ILongTermMemoryService longTermMemory)
@@ -21,29 +21,29 @@ public class StateManager
         _shortTermMemory = shortTermMemory;
         _longTermMemory = longTermMemory;
     }
-    
+
     public void AddThought(AgentThought thought)
     {
         _thoughts.Enqueue(thought);
-        
+
         // Keep only recent thoughts
         while (_thoughts.Count > 100)
         {
             _thoughts.TryDequeue(out _);
         }
-        
+
         UpdateState();
-        
-        // Store thought in both short-term (for web access) and long-term memory
-        _ = _shortTermMemory.SetAsync($"thought:{thought.Id}", thought, TimeSpan.FromHours(24));
-        _ = StoreThoughtAsync(thought);
+
+        // Store thought in short-term memory only
+        // Memory consolidation service will promote important thoughts to long-term
+        _ = _shortTermMemory.SetAsync($"thought:{thought.Id}", thought, TimeSpan.FromHours(8));
     }
-    
+
     public void AddAction(AgentAction action)
     {
         _actions.Enqueue(action);
         _actionDict[action.Id] = action;
-        
+
         // Keep only recent actions
         while (_actions.Count > 50)
         {
@@ -52,24 +52,23 @@ public class StateManager
                 _actionDict.TryRemove(old.Id, out _);
             }
         }
-        
+
         UpdateState();
-        
-        // Store action in both short-term (for web access) and long-term memory
-        _ = _shortTermMemory.SetAsync($"action:{action.Id}", action, TimeSpan.FromHours(24));
-        _ = StoreActionAsync(action);
+
+        // Store action in short-term memory only
+        // Memory consolidation service will promote important actions to long-term
+        _ = _shortTermMemory.SetAsync($"action:{action.Id}", action, TimeSpan.FromHours(8));
     }
-    
+
     public void UpdateAction(AgentAction action)
     {
         _actionDict[action.Id] = action;
         UpdateState();
-        
-        // Update action in both short-term and long-term memory
-        _ = _shortTermMemory.SetAsync($"action:{action.Id}", action, TimeSpan.FromHours(24));
-        _ = StoreActionAsync(action);
+
+        // Update action in short-term memory only
+        _ = _shortTermMemory.SetAsync($"action:{action.Id}", action, TimeSpan.FromHours(8));
     }
-    
+
     public void UpdateStatus(AgentStatus status)
     {
         lock (_lock)
@@ -77,11 +76,11 @@ public class StateManager
             _currentState.Status = status;
             _currentState.LastUpdated = DateTime.UtcNow;
         }
-        
+
         NotifyStateChanged();
         PersistState();
     }
-    
+
     public void UpdateGoal(string goal)
     {
         lock (_lock)
@@ -89,11 +88,11 @@ public class StateManager
             _currentState.CurrentGoal = goal;
             _currentState.LastUpdated = DateTime.UtcNow;
         }
-        
+
         NotifyStateChanged();
         PersistState();
     }
-    
+
     public void UpdatePrompt(string prompt)
     {
         lock (_lock)
@@ -101,11 +100,11 @@ public class StateManager
             _currentState.CurrentPrompt = prompt;
             _currentState.LastUpdated = DateTime.UtcNow;
         }
-        
+
         NotifyStateChanged();
         PersistState();
     }
-    
+
     public AgentState GetCurrentState()
     {
         lock (_lock)
@@ -120,11 +119,11 @@ public class StateManager
                 RecentThoughts = _thoughts.TakeLast(20).ToList(),
                 RecentActions = _actions.TakeLast(10).ToList()
             };
-            
+
             return state;
         }
     }
-    
+
     private void UpdateState()
     {
         lock (_lock)
@@ -133,11 +132,11 @@ public class StateManager
             _currentState.RecentActions = _actions.TakeLast(10).ToList();
             _currentState.LastUpdated = DateTime.UtcNow;
         }
-        
+
         NotifyStateChanged();
         PersistState();
     }
-    
+
     private void NotifyStateChanged()
     {
         StateChanged?.Invoke(this, GetCurrentState());
@@ -145,83 +144,41 @@ public class StateManager
 
     private void PersistState()
     {
-        // Store current state in both short-term and long-term memory
+        // Store current state in short-term memory only
+        // The web UI will read from short-term for real-time updates
         var state = GetCurrentState();
         _ = _shortTermMemory.SetAsync("agent:current-state", state, TimeSpan.FromHours(1));
-        
-        // Also store in long-term memory as a special memory entry for cross-process access
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                var stateMemory = new MemoryEntry
-                {
-                    Id = $"agent-state-{DateTime.UtcNow:yyyyMMddHHmmssfff}".ToLowerInvariant(),
-                    Type = MemoryType.Decision,
-                    Content = System.Text.Json.JsonSerializer.Serialize(state),
-                    Summary = $"Agent State - Status: {state.Status}, Goal: {state.CurrentGoal}",
-                    Importance = 1.0,
-                    Tags = new List<string> { "agent-state", "system" },
-                    Timestamp = DateTime.UtcNow
-                };
-                await _longTermMemory.StoreMemoryAsync(stateMemory);
-            }
-            catch
-            {
-                // Silently fail
-            }
-        });
     }
 
-    private async Task StoreThoughtAsync(AgentThought thought)
+    // Helper method to get all thoughts from short-term memory
+    // Used by MemoryConsolidationService to retrieve thoughts for consolidation
+    public Task<List<AgentThought>> GetAllThoughtsFromMemoryAsync(CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var memory = new MemoryEntry
-            {
-                Id = thought.Id,
-                Type = thought.Type switch
-                {
-                    ThoughtType.Observation => MemoryType.Observation,
-                    ThoughtType.Reasoning => MemoryType.Decision,
-                    ThoughtType.Reflection => MemoryType.Reflection,
-                    _ => MemoryType.Observation
-                },
-                Content = thought.Content,
-                Summary = $"{thought.Type}: {thought.Content.Substring(0, Math.Min(50, thought.Content.Length))}...",
-                Importance = 0.4,
-                Tags = new List<string> { "thought", thought.Type.ToString().ToLower() },
-                Timestamp = thought.Timestamp
-            };
+        var thoughts = new List<AgentThought>();
 
-            await _longTermMemory.StoreMemoryAsync(memory);
-        }
-        catch (Exception)
+        // Return in-memory thoughts for now
+        // In future, could query short-term memory if needed
+        lock (_lock)
         {
-            // Silently fail - don't interrupt agent operation
+            thoughts = _thoughts.ToList();
         }
+
+        return Task.FromResult(thoughts);
     }
 
-    private async Task StoreActionAsync(AgentAction action)
+    // Helper method to get all actions from short-term memory
+    // Used by MemoryConsolidationService to retrieve actions for consolidation
+    public Task<List<AgentAction>> GetAllActionsFromMemoryAsync(CancellationToken cancellationToken = default)
     {
-        try
-        {
-            var memory = new MemoryEntry
-            {
-                Id = action.Id,
-                Type = action.Status == ActionStatus.Completed ? MemoryType.Success : MemoryType.Decision,
-                Content = $"Action: {action.Name}\nDescription: {action.Description}\nInput: {action.Input}\nOutput: {action.Output}",
-                Summary = $"{action.Name}: {action.Description}",
-                Importance = 0.6,
-                Tags = new List<string> { "action", action.Status.ToString().ToLower(), action.Name.ToLower() },
-                Timestamp = action.Timestamp
-            };
+        var actions = new List<AgentAction>();
 
-            await _longTermMemory.StoreMemoryAsync(memory);
-        }
-        catch (Exception)
+        // Return in-memory actions for now
+        // In future, could query short-term memory if needed
+        lock (_lock)
         {
-            // Silently fail - don't interrupt agent operation
+            actions = _actions.ToList();
         }
+
+        return Task.FromResult(actions);
     }
 }

@@ -9,6 +9,16 @@ namespace ALAN.Agent.Services;
 
 public class AutonomousAgent
 {
+    // Memory configuration constants
+    private const double IMPORTANCE_WEIGHT = 0.7;
+    private const double RECENCY_WEIGHT = 0.3;
+    private const int RECENCY_CUTOFF_DAYS = 7;
+    private const int MAX_MEMORY_CONTEXT_SIZE = 20;
+    private const int MEMORY_REFRESH_INTERVAL_ITERATIONS = 10;
+    private const int MEMORY_REFRESH_INTERVAL_HOURS = 1;
+    private const double HIGH_IMPORTANCE_THRESHOLD = 0.8;
+    private const int CONTENT_PREVIEW_MAX_LENGTH = 200;
+    
     private readonly AIAgent _agent;
     private readonly AgentThread _thread;
     private readonly ILogger<AutonomousAgent> _logger;
@@ -125,8 +135,9 @@ public class AutonomousAgent
                 _consecutiveThrottles = 0;
                 await ThinkAndActAsync(cancellationToken);
 
-                // Refresh memories periodically (every 10 iterations or 1 hour)
-                if (_iterationCount % 10 == 0 || (DateTime.UtcNow - _lastMemoryLoad).TotalHours >= 1)
+                // Refresh memories periodically (every N iterations or M hours)
+                if (_iterationCount % MEMORY_REFRESH_INTERVAL_ITERATIONS == 0 || 
+                    (DateTime.UtcNow - _lastMemoryLoad).TotalHours >= MEMORY_REFRESH_INTERVAL_HOURS)
                 {
                     await LoadRecentMemoriesAsync(cancellationToken);
                 }
@@ -182,8 +193,8 @@ public class AutonomousAgent
                 .Concat(successes)
                 .Concat(reflections)
                 .Concat(decisions)
-                .OrderByDescending(m => m.Importance * 0.7 + (m.Timestamp > DateTime.UtcNow.AddDays(-7) ? 0.3 : 0))
-                .Take(20) // Limit to top 20 most relevant memories
+                .OrderByDescending(m => m.Importance * IMPORTANCE_WEIGHT + (m.Timestamp > DateTime.UtcNow.AddDays(-RECENCY_CUTOFF_DAYS) ? RECENCY_WEIGHT : 0))
+                .Take(MAX_MEMORY_CONTEXT_SIZE) // Limit to top N most relevant memories
                 .ToList();
             
             _lastMemoryLoad = DateTime.UtcNow;
@@ -567,10 +578,10 @@ Be specific about which tools you use and what you discover.";
                 context.AppendLine($"- [{ageStr}, importance: {memory.Importance:F2}] {memory.Summary}");
                 
                 // Include full content for high-importance items
-                if (memory.Importance >= 0.8 && !string.IsNullOrEmpty(memory.Content) && memory.Content != memory.Summary)
+                if (memory.Importance >= HIGH_IMPORTANCE_THRESHOLD && !string.IsNullOrEmpty(memory.Content) && memory.Content != memory.Summary)
                 {
-                    var contentPreview = memory.Content.Length > 200 
-                        ? memory.Content.Substring(0, 200) + "..." 
+                    var contentPreview = memory.Content.Length > CONTENT_PREVIEW_MAX_LENGTH 
+                        ? memory.Content.Substring(0, CONTENT_PREVIEW_MAX_LENGTH) + "..." 
                         : memory.Content;
                     context.AppendLine($"  Details: {contentPreview}");
                 }

@@ -375,13 +375,13 @@ Be specific about which tools you use and what you discover.";
         _stateManager.UpdateStatus(AgentStatus.Idle);
     }
 
-    private List<ToolCall>? ExtractToolCalls(dynamic result)
+    private List<ToolCall>? ExtractToolCalls(AgentRunResponse result)
     {
         try
         {
             var toolCalls = new Dictionary<string, ToolCall>();
 
-            // Try to access Messages property
+            // Access Messages property from AgentRunResponse
             if (result.Messages != null)
             {
                 foreach (var message in result.Messages)
@@ -390,95 +390,45 @@ Be specific about which tools you use and what you discover.";
                     {
                         foreach (var content in message.Contents)
                         {
-                            // Check if this is a function call by checking its type name
-                            var contentTypeName = content.GetType().Name;
-
-                            if (contentTypeName.Contains("FunctionCall", StringComparison.OrdinalIgnoreCase))
+                            // Check if this is a function call
+                            if (content is FunctionCallContent functionCall)
                             {
-                                try
+                                _logger.LogTrace("Found function call: {FunctionName}", functionCall.Name);
+
+                                var toolCall = new ToolCall
                                 {
-                                    _logger.LogTrace("Found function call content of type: {TypeName}", (string)contentTypeName);
+                                    ToolName = functionCall.Name ?? "unknown",
+                                    Arguments = functionCall.Arguments != null
+                                        ? System.Text.Json.JsonSerializer.Serialize(functionCall.Arguments)
+                                        : null
+                                };
 
-                                    // Extract CallId, function name, and arguments
-                                    string? callId = null;
-                                    string? functionName = null;
-                                    string? arguments = null;
+                                toolCall.McpServer = DetermineMcpServer(toolCall.ToolName);
+                                toolCall.Success = true; // Will be updated if we find a matching result
 
-                                    if (content.GetType().GetProperty("CallId")?.GetValue(content) is string id)
-                                    {
-                                        callId = id;
-                                    }
-
-                                    if (content.GetType().GetProperty("Name")?.GetValue(content) is string name)
-                                    {
-                                        functionName = name;
-                                    }
-
-                                    if (content.GetType().GetProperty("Arguments")?.GetValue(content) is object args)
-                                    {
-                                        arguments = System.Text.Json.JsonSerializer.Serialize(args);
-                                    }
-
-                                    if (callId != null)
-                                    {
-                                        var toolCall = new ToolCall
-                                        {
-                                            ToolName = functionName ?? content.ToString() ?? "unknown",
-                                            Arguments = arguments
-                                        };
-
-                                        toolCall.McpServer = DetermineMcpServer(toolCall.ToolName);
-                                        toolCall.Success = true; // Will be updated if we find a matching result
-
-                                        toolCalls[callId] = toolCall;
-                                        _logger.LogInformation("Extracted tool call: {ToolName} from {McpServer} with CallId: {CallId}",
-                                            toolCall.ToolName, toolCall.McpServer ?? "unknown", callId);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogWarning(ex, "Failed to extract details from function call content");
-                                }
+                                toolCalls[functionCall.CallId] = toolCall;
+                                _logger.LogInformation("Extracted tool call: {ToolName} from {McpServer} with CallId: {CallId}",
+                                    toolCall.ToolName, toolCall.McpServer ?? "unknown", functionCall.CallId);
                             }
-                            else if (contentTypeName.Contains("FunctionResult", StringComparison.OrdinalIgnoreCase))
+                            else if (content is FunctionResultContent functionResult)
                             {
-                                try
+                                _logger.LogTrace("Found function result for CallId: {CallId}", functionResult.CallId);
+
+                                if (toolCalls.ContainsKey(functionResult.CallId))
                                 {
-                                    _logger.LogTrace("Found function result content of type: {TypeName}", (string)contentTypeName);
+                                    toolCalls[functionResult.CallId].Result = functionResult.Result != null
+                                        ? System.Text.Json.JsonSerializer.Serialize(functionResult.Result)
+                                        : null;
 
-                                    // Extract CallId and Result
-                                    string? callId = null;
-                                    string? resultContent = null;
-                                    bool? isError = null;
-
-                                    if (content.GetType().GetProperty("CallId")?.GetValue(content) is string id)
+                                    // Check if result indicates an error
+                                    var resultType = functionResult.Result?.GetType();
+                                    if (resultType?.GetProperty("isError")?.GetValue(functionResult.Result) is bool errorFlag)
                                     {
-                                        callId = id;
+                                        toolCalls[functionResult.CallId].Success = !errorFlag;
                                     }
 
-                                    if (content.GetType().GetProperty("Result")?.GetValue(content) is object res)
-                                    {
-                                        resultContent = System.Text.Json.JsonSerializer.Serialize(res);
-
-                                        // Check if result has an isError property
-                                        var resultType = res.GetType();
-                                        if (resultType.GetProperty("isError")?.GetValue(res) is bool errorFlag)
-                                        {
-                                            isError = errorFlag;
-                                        }
-                                    }
-
-                                    if (callId != null && toolCalls.ContainsKey(callId))
-                                    {
-                                        toolCalls[callId].Result = resultContent;
-                                        toolCalls[callId].Success = isError.HasValue ? !isError.Value : true;
-                                        _logger.LogInformation("Extracted result for CallId: {CallId}, Success: {Success}",
-                                            callId, toolCalls[callId].Success);
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    _logger.LogWarning(ex, "Failed to extract details from function result content");
+                                    _logger.LogInformation("Extracted result for CallId: {CallId}, Success: {Success}",
+                                        functionResult.CallId, toolCalls[functionResult.CallId].Success);
                                 }
                             }
                         }

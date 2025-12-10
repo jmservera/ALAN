@@ -24,6 +24,7 @@ public class ToolCall
 {
     public string ToolName { get; set; } = string.Empty;
     public string? McpServer { get; set; }
+    public string? Arguments { get; set; }
     public string? Result { get; set; }
     public bool Success { get; set; } = true;
     public double? DurationMs { get; set; }

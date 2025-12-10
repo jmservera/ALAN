@@ -379,7 +379,7 @@ Be specific about which tools you use and what you discover.";
     {
         try
         {
-            var toolCalls = new List<ToolCall>();
+            var toolCalls = new Dictionary<string, ToolCall>();
 
             // Try to access Messages property
             if (result.Messages != null)
@@ -399,28 +399,86 @@ Be specific about which tools you use and what you discover.";
                                 {
                                     _logger.LogTrace("Found function call content of type: {TypeName}", (string)contentTypeName);
 
-                                    // Extract function name from Name property
+                                    // Extract CallId, function name, and arguments
+                                    string? callId = null;
                                     string? functionName = null;
+                                    string? arguments = null;
+
+                                    if (content.GetType().GetProperty("CallId")?.GetValue(content) is string id)
+                                    {
+                                        callId = id;
+                                    }
+
                                     if (content.GetType().GetProperty("Name")?.GetValue(content) is string name)
                                     {
                                         functionName = name;
                                     }
 
-                                    var toolCall = new ToolCall
+                                    if (content.GetType().GetProperty("Arguments")?.GetValue(content) is object args)
                                     {
-                                        ToolName = functionName ?? content.ToString() ?? "unknown"
-                                    };
+                                        arguments = System.Text.Json.JsonSerializer.Serialize(args);
+                                    }
 
-                                    toolCall.McpServer = DetermineMcpServer(toolCall.ToolName);
-                                    toolCall.Success = true; // Assume success if we got the result
+                                    if (callId != null)
+                                    {
+                                        var toolCall = new ToolCall
+                                        {
+                                            ToolName = functionName ?? content.ToString() ?? "unknown",
+                                            Arguments = arguments
+                                        };
 
-                                    toolCalls.Add(toolCall);
-                                    _logger.LogInformation("Extracted tool call: {ToolName} from {McpServer}",
-                                        toolCall.ToolName, toolCall.McpServer ?? "unknown");
+                                        toolCall.McpServer = DetermineMcpServer(toolCall.ToolName);
+                                        toolCall.Success = true; // Will be updated if we find a matching result
+
+                                        toolCalls[callId] = toolCall;
+                                        _logger.LogInformation("Extracted tool call: {ToolName} from {McpServer} with CallId: {CallId}",
+                                            toolCall.ToolName, toolCall.McpServer ?? "unknown", callId);
+                                    }
                                 }
                                 catch (Exception ex)
                                 {
                                     _logger.LogWarning(ex, "Failed to extract details from function call content");
+                                }
+                            }
+                            else if (contentTypeName.Contains("FunctionResult", StringComparison.OrdinalIgnoreCase))
+                            {
+                                try
+                                {
+                                    _logger.LogTrace("Found function result content of type: {TypeName}", (string)contentTypeName);
+
+                                    // Extract CallId and Result
+                                    string? callId = null;
+                                    string? resultContent = null;
+                                    bool? isError = null;
+
+                                    if (content.GetType().GetProperty("CallId")?.GetValue(content) is string id)
+                                    {
+                                        callId = id;
+                                    }
+
+                                    if (content.GetType().GetProperty("Result")?.GetValue(content) is object res)
+                                    {
+                                        resultContent = System.Text.Json.JsonSerializer.Serialize(res);
+
+                                        // Check if result has an isError property
+                                        var resultType = res.GetType();
+                                        if (resultType.GetProperty("isError")?.GetValue(res) is bool errorFlag)
+                                        {
+                                            isError = errorFlag;
+                                        }
+                                    }
+
+                                    if (callId != null && toolCalls.ContainsKey(callId))
+                                    {
+                                        toolCalls[callId].Result = resultContent;
+                                        toolCalls[callId].Success = isError.HasValue ? !isError.Value : true;
+                                        _logger.LogInformation("Extracted result for CallId: {CallId}, Success: {Success}",
+                                            callId, toolCalls[callId].Success);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(ex, "Failed to extract details from function result content");
                                 }
                             }
                         }
@@ -428,16 +486,18 @@ Be specific about which tools you use and what you discover.";
                 }
             }
 
-            if (toolCalls.Count > 0)
+            var toolCallList = toolCalls.Values.ToList();
+
+            if (toolCallList.Count > 0)
             {
-                _logger.LogInformation("✓ Extracted {Count} tool calls from agent result", toolCalls.Count);
+                _logger.LogInformation("✓ Extracted {Count} tool calls from agent result", toolCallList.Count);
             }
             else
             {
                 _logger.LogDebug("No tool calls found in agent result");
             }
 
-            return toolCalls.Count > 0 ? toolCalls : null;
+            return toolCallList.Count > 0 ? toolCallList : null;
         }
         catch (Exception ex)
         {

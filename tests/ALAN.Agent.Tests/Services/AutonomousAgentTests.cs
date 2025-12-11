@@ -19,6 +19,7 @@ public class AutonomousAgentTests
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
         var mockConsolidation = new Mock<IMemoryConsolidationService>();
+        var mockPromptService = new Mock<PromptService>(Mock.Of<ILogger<PromptService>>(), null);
         
         // Create real service instances with mocked dependencies
         var stateManager = new StateManager(mockShortTermMemory.Object, mockLongTermMemory.Object);
@@ -39,7 +40,8 @@ public class AutonomousAgentTests
             mockLongTermMemory.Object,
             mockShortTermMemory.Object,
             batchLearning,
-            humanInput);
+            humanInput,
+            mockPromptService.Object);
     }
 
     [Fact]
@@ -843,6 +845,7 @@ public class AutonomousAgentTests
         var humanInput = new HumanInputHandler(
             Mock.Of<ILogger<HumanInputHandler>>(),
             stateManager);
+        var mockPromptService = new Mock<PromptService>(Mock.Of<ILogger<PromptService>>(), null);
 
         return new AutonomousAgent(
             mockAIAgent.Object,
@@ -852,7 +855,8 @@ public class AutonomousAgentTests
             longTermMemory,
             shortTermMemory,
             batchLearning,
-            humanInput);
+            humanInput,
+            mockPromptService.Object);
     }
 
     #endregion

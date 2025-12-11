@@ -7,13 +7,14 @@ namespace ALAN.ChatApi.Services;
 /// <summary>
 /// Service for handling real-time chat with the AI agent via WebSockets with streaming support.
 /// </summary>
-public class ChatService
+public class ChatService : IDisposable
 {
     private readonly AIAgent _agent;
     private readonly ILogger<ChatService> _logger;
     private readonly ILongTermMemoryService _longTermMemory;
     private readonly Dictionary<string, AgentThread> _activeThreads = new();
     private readonly SemaphoreSlim _threadLock = new(1, 1);
+    private bool _disposed;
 
     public ChatService(
         AIAgent agent,
@@ -22,7 +23,7 @@ public class ChatService
     {
         _agent = agent;
         _logger = logger;
-        _longTermMemory = longTermMemory;
+        _longTermMemory = longTermMemory; // Reserved for future use - retrieving conversation context from long-term memory
     }
 
     /// <summary>
@@ -39,7 +40,7 @@ public class ChatService
         try
         {
             // Get or create thread for this session
-            var thread = await GetOrCreateThreadAsync(sessionId);
+            var thread = await GetOrCreateThreadAsync(sessionId, cancellationToken);
 
             // Create a prompt that includes context about the agent's knowledge
             var prompt = $@"You are ALAN, an autonomous AI agent. A human user is chatting with you to learn about your knowledge and capabilities.
@@ -110,9 +111,9 @@ Keep your response concise and conversational.";
         }
     }
 
-    private async Task<AgentThread> GetOrCreateThreadAsync(string sessionId)
+    private async Task<AgentThread> GetOrCreateThreadAsync(string sessionId, CancellationToken cancellationToken = default)
     {
-        await _threadLock.WaitAsync();
+        await _threadLock.WaitAsync(cancellationToken);
         try
         {
             if (!_activeThreads.TryGetValue(sessionId, out var thread))
@@ -127,5 +128,14 @@ Keep your response concise and conversational.";
         {
             _threadLock.Release();
         }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _threadLock?.Dispose();
+        _disposed = true;
     }
 }

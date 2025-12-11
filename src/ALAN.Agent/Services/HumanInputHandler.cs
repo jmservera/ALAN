@@ -80,12 +80,14 @@ public class HumanInputHandler
 
     private async Task ProcessQueuedInputsAsync(AutonomousAgent agent, CancellationToken cancellationToken)
     {
+        const int maxRetryCount = 5; // Maximum number of retries before considering message as dead-letter
+        
         try
         {
             // Receive messages from the human input queue (steering commands only)
             var messages = await _humanInputQueue.ReceiveAsync(
                 maxMessages: 10,
-                visibilityTimeout: TimeSpan.FromSeconds(30),
+                visibilityTimeout: TimeSpan.FromSeconds(60), // Increased from 30 to 60 for longer operations
                 cancellationToken: cancellationToken);
 
             foreach (var msg in messages)
@@ -93,7 +95,20 @@ public class HumanInputHandler
                 try
                 {
                     var input = msg.Content;
-                    _logger.LogInformation("Processing queued input: {Type}", input.Type);
+                    _logger.LogInformation("Processing queued input: {Type} (DequeueCount: {Count})", 
+                        input.Type, msg.DequeueCount);
+
+                    // Check if message has been retried too many times
+                    if (msg.DequeueCount > maxRetryCount)
+                    {
+                        _logger.LogError(
+                            "Message {MessageId} exceeded max retry count ({MaxRetry}). Moving to dead-letter. Type: {Type}, Content: {Content}",
+                            msg.MessageId, maxRetryCount, input.Type, input.Content);
+                        
+                        // Delete message to prevent infinite retry
+                        await _humanInputQueue.DeleteAsync(msg.MessageId, msg.PopReceipt, cancellationToken);
+                        continue;
+                    }
 
                     // Skip chat requests - they are handled by ChatApi
                     if (input.Type == HumanInputType.ChatWithAgent)

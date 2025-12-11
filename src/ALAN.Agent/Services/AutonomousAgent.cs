@@ -35,6 +35,7 @@ public class AutonomousAgent
     private int _iterationCount = 0;
     private List<MemoryEntry> _recentMemories = new();
     private DateTime _lastMemoryLoad = DateTime.MinValue;
+    private string _directive = "";
 
     public AutonomousAgent(
         AIAgent agent,
@@ -136,7 +137,8 @@ public class AutonomousAgent
                 await ThinkAndActAsync(cancellationToken);
 
                 // Refresh memories periodically (every N iterations or M hours)
-                if (_iterationCount % MEMORY_REFRESH_INTERVAL_ITERATIONS == 0 ||
+                // Skip refresh on iteration 0 since memories were just loaded at startup
+                if ((_iterationCount > 0 && _iterationCount % MEMORY_REFRESH_INTERVAL_ITERATIONS == 0) ||
                     (DateTime.UtcNow - _lastMemoryLoad).TotalHours >= MEMORY_REFRESH_INTERVAL_HOURS)
                 {
                     await LoadRecentMemoriesAsync(cancellationToken);
@@ -176,66 +178,87 @@ public class AutonomousAgent
         {
             _logger.LogInformation("Loading recent memories from long-term storage...");
 
-            // Get recent learnings (high importance, prioritized)
-            var learnings = await _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Learning, maxResults: 10, cancellationToken);
+            // Optimize memory loading by fetching in parallel and limiting results
+            var learningsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Learning, maxResults: 10, cancellationToken);
+            var successesTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Success, maxResults: 10, cancellationToken);
+            var reflectionsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Reflection, maxResults: 5, cancellationToken);
+            var decisionsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Decision, maxResults: 10, cancellationToken);
+            var actionKeysTask = _shortTermMemory.GetKeysAsync("action:*", cancellationToken);
 
-            // Get recent successful actions
-            var successes = await _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Success, maxResults: 10, cancellationToken);
+            // Wait for all tasks to complete in parallel
+            await Task.WhenAll(learningsTask, successesTask, reflectionsTask, decisionsTask, actionKeysTask);
 
-            // Get recent reflections (high value for continuous improvement)
-            var reflections = await _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Reflection, maxResults: 5, cancellationToken);
+            // Combine and sort by importance and recency with gradual decay
+            // Use a capacity hint for better performance
+            var allMemories = new List<MemoryEntry>(35);
+            allMemories.AddRange(learningsTask.Result);
+            allMemories.AddRange(successesTask.Result);
+            allMemories.AddRange(reflectionsTask.Result);
+            allMemories.AddRange(decisionsTask.Result);
 
-            // Get recent decisions
-            var decisions = await _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Decision, maxResults: 10, cancellationToken);
-
-            // Combine and sort by importance and recency
-            _recentMemories = learnings
-                .Concat(successes)
-                .Concat(reflections)
-                .Concat(decisions)
-                .OrderByDescending(m => m.Importance * IMPORTANCE_WEIGHT + (m.Timestamp > DateTime.UtcNow.AddDays(-RECENCY_CUTOFF_DAYS) ? RECENCY_WEIGHT : 0))
-                .Take(MAX_MEMORY_CONTEXT_SIZE) // Limit to top N most relevant memories
+            // Sort and take top memories in a single pass
+            _recentMemories = allMemories
+                .OrderByDescending(m =>
+                    m.Importance * IMPORTANCE_WEIGHT +
+                    Math.Max(0, 1.0 - (DateTime.UtcNow - m.Timestamp).TotalDays / RECENCY_CUTOFF_DAYS) * RECENCY_WEIGHT
+                )
+                .Take(MAX_MEMORY_CONTEXT_SIZE)
                 .ToList();
 
-            // Also load recent short-term memories and learnings that haven't been consolidated yet
-            // These are crucial for current execution context
-            // Get all action keys from short-term memory
-
-            var shortTermActions = new List<AgentAction>();
-            // Get all action keys from short-term memory
-            var actionKeys = await _shortTermMemory.GetKeysAsync("action:*", cancellationToken);
-            foreach (var key in actionKeys.Take(10)) // Limit to recent 10 actions
+            // Load recent short-term actions in parallel (limit to 10 most recent)
+            var actionKeys = actionKeysTask.Result;
+            var shortTermActions = new List<AgentAction>(10);
+            var actionTasks = actionKeys.Take(10).Select(async key =>
             {
                 var action = await _shortTermMemory.GetAsync<AgentAction>(key, cancellationToken);
                 if (action != null)
                 {
-                    shortTermActions.Add(action);
+                    lock (shortTermActions)
+                    {
+                        shortTermActions.Add(action);
+                    }
+                }
+            });
+            
+            await Task.WhenAll(actionTasks);
+
+            // Convert recent successful actions to memory entries efficiently
+            if (shortTermActions.Any())
+            {
+                var recentActionMemories = shortTermActions
+                    .Where(a => a.Status == ActionStatus.Completed)
+                    .OrderByDescending(a => a.Timestamp)
+                    .Take(5)
+                    .Select(a => new MemoryEntry
+                    {
+                        Type = MemoryType.Success,
+                        Content = a.Output ?? a.Input,
+                        Summary = a.Output ?? a.Description ?? string.Empty,
+                        Timestamp = a.Timestamp,
+                        Importance = 0.5, // Lower importance for actions (will be consolidated later)
+                        Tags = new List<string> { "short-term", "action", "recent" }
+                    })
+                    .ToList();
+
+                // Prepend short-term memories and limit to MAX_MEMORY_CONTEXT_SIZE
+                if (recentActionMemories.Any())
+                {
+                    _recentMemories = recentActionMemories
+                        .Concat(_recentMemories)
+                        .Take(MAX_MEMORY_CONTEXT_SIZE)
+                        .ToList();
                 }
             }
-            // Convert recent successful actions to memory entries
-            var recentActionMemories = shortTermActions
-                .Where(a => a.Status == ActionStatus.Completed)
-                .OrderByDescending(a => a.Timestamp)
-                .Take(5)
-                .Select(a => new MemoryEntry
-                {
-                    Type = MemoryType.Success,
-                    Content = a.Output ?? a.Input,
-                    Summary = a.Output ?? a.Description ?? string.Empty,
-                    Timestamp = a.Timestamp,
-                    Importance = 0.5, // Lower importance for actions (will be consolidated later)
-                    Tags = new List<string> { "short-term", "action", "recent" }
-                });
 
-            // Add short-term memories to the context (prepend so they appear first due to recency)
-            _recentMemories = recentActionMemories
-                .Concat(_recentMemories)
-                .Take(MAX_MEMORY_CONTEXT_SIZE)
-                .ToList();
             _lastMemoryLoad = DateTime.UtcNow;
 
+            // Log actual counts from the final _recentMemories list
+            var learningsInContext = _recentMemories.Count(m => m.Type == MemoryType.Learning);
+            var successesInContext = _recentMemories.Count(m => m.Type == MemoryType.Success);
+            var reflectionsInContext = _recentMemories.Count(m => m.Type == MemoryType.Reflection);
+            var decisionsInContext = _recentMemories.Count(m => m.Type == MemoryType.Decision);
             _logger.LogInformation("Loaded {Count} memories: {Learnings} learnings, {Successes} successes, {Reflections} reflections, {Decisions} decisions",
-                _recentMemories.Count, learnings.Count, successes.Count, reflections.Count, decisions.Count);
+                _recentMemories.Count, learningsInContext, successesInContext, reflectionsInContext, decisionsInContext);
         }
         catch (Exception ex)
         {
@@ -243,8 +266,6 @@ public class AutonomousAgent
             _recentMemories = new List<MemoryEntry>();
         }
     }
-
-    static string _directive = "";
 
     private async Task ThinkAndActAsync(CancellationToken cancellationToken)
     {

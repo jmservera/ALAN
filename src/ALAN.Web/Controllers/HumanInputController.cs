@@ -1,5 +1,5 @@
 using ALAN.Shared.Models;
-using ALAN.Shared.Services.Memory;
+using ALAN.Shared.Services.Queue;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ALAN.Web.Controllers;
@@ -9,14 +9,14 @@ namespace ALAN.Web.Controllers;
 public class HumanInputController : ControllerBase
 {
     private readonly ILogger<HumanInputController> _logger;
-    private readonly IShortTermMemoryService _shortTermMemory;
+    private readonly IMessageQueue<HumanInput> _humanInputQueue;
     
     public HumanInputController(
         ILogger<HumanInputController> logger,
-        IShortTermMemoryService shortTermMemory)
+        IMessageQueue<HumanInput> humanInputQueue)
     {
         _logger = logger;
-        _shortTermMemory = shortTermMemory;
+        _humanInputQueue = humanInputQueue;
     }
     
     [HttpPost("input")]
@@ -29,12 +29,8 @@ public class HumanInputController : ControllerBase
 
         _logger.LogInformation("Received human input: {Type} - {Content}", input.Type, input.Content);
         
-        // Store input in short-term memory for agent to pick up
-        await _shortTermMemory.SetAsync(
-            $"human-input:{input.Id}",
-            input,
-            TimeSpan.FromMinutes(5),
-            cancellationToken);
+        // Send to human input queue
+        await _humanInputQueue.SendAsync(input, cancellationToken);
         
         return Ok(new
         {
@@ -60,12 +56,8 @@ public class HumanInputController : ControllerBase
             Content = request.Prompt
         };
         
-        // Store input in short-term memory for agent to pick up
-        await _shortTermMemory.SetAsync(
-            $"human-input:{input.Id}",
-            input,
-            TimeSpan.FromMinutes(5),
-            cancellationToken);
+        // Send to human input queue
+        await _humanInputQueue.SendAsync(input, cancellationToken);
         
         return Ok(new
         {
@@ -85,12 +77,8 @@ public class HumanInputController : ControllerBase
             Content = "Pause requested"
         };
         
-        // Store input in short-term memory for agent to pick up
-        await _shortTermMemory.SetAsync(
-            $"human-input:{input.Id}",
-            input,
-            TimeSpan.FromMinutes(5),
-            cancellationToken);
+        // Send to human input queue
+        await _humanInputQueue.SendAsync(input, cancellationToken);
         
         return Ok(new { message = "Agent pause queued" });
     }
@@ -106,12 +94,8 @@ public class HumanInputController : ControllerBase
             Content = "Resume requested"
         };
         
-        // Store input in short-term memory for agent to pick up
-        await _shortTermMemory.SetAsync(
-            $"human-input:{input.Id}",
-            input,
-            TimeSpan.FromMinutes(5),
-            cancellationToken);
+        // Send to human input queue
+        await _humanInputQueue.SendAsync(input, cancellationToken);
         
         return Ok(new { message = "Agent resume queued" });
     }
@@ -127,12 +111,8 @@ public class HumanInputController : ControllerBase
             Content = "Batch learning trigger"
         };
         
-        // Store input in short-term memory for agent to pick up
-        await _shortTermMemory.SetAsync(
-            $"human-input:{input.Id}",
-            input,
-            TimeSpan.FromMinutes(5),
-            cancellationToken);
+        // Send to human input queue
+        await _humanInputQueue.SendAsync(input, cancellationToken);
         
         return Ok(new { message = "Batch learning trigger queued" });
     }

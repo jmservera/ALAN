@@ -1,6 +1,8 @@
 using ALAN.Agent.Services;
 using ALAN.Agent.Services.MCP;
 using ALAN.Shared.Services.Memory;
+using ALAN.Shared.Services.Queue;
+using ALAN.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -42,6 +44,19 @@ builder.Services.AddSingleton<IShortTermMemoryService>(sp =>
     new AzureBlobShortTermMemoryService(
         storageConnectionString,
         sp.GetRequiredService<ILogger<AzureBlobShortTermMemoryService>>()));
+
+// Register queue services for human interaction
+builder.Services.AddSingleton<IMessageQueue<HumanInput>>(sp =>
+    new AzureStorageQueueService<HumanInput>(
+        storageConnectionString,
+        "human-inputs",
+        sp.GetRequiredService<ILogger<AzureStorageQueueService<HumanInput>>>()));
+
+builder.Services.AddSingleton<IMessageQueue<ALAN.Shared.Models.ChatResponse>>(sp =>
+    new AzureStorageQueueService<ALAN.Shared.Models.ChatResponse>(
+        storageConnectionString,
+        "chat-responses",
+        sp.GetRequiredService<ILogger<AzureStorageQueueService<ALAN.Shared.Models.ChatResponse>>>()));
 
 // Register consolidation service (requires AIAgent, so it's registered after)
 builder.Services.AddSingleton<IMemoryConsolidationService, MemoryConsolidationService>();

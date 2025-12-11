@@ -1,5 +1,5 @@
 using ALAN.Shared.Models;
-using ALAN.Shared.Services.Memory;
+using ALAN.Shared.Services.Queue;
 using Microsoft.Extensions.Logging;
 using Microsoft.Agents.AI;
 using System.Collections.Concurrent;
@@ -8,26 +8,29 @@ namespace ALAN.Agent.Services;
 
 /// <summary>
 /// Manages human input commands for steering the agent.
-/// Provides a queue-based system for processing human directives.
+/// Uses Azure Storage Queue for reliable message processing.
 /// </summary>
 public class HumanInputHandler
 {
     private readonly ConcurrentQueue<HumanInput> _inputQueue = new();
     private readonly ILogger<HumanInputHandler> _logger;
     private readonly StateManager _stateManager;
-    private readonly IShortTermMemoryService _shortTermMemory;
+    private readonly IMessageQueue<HumanInput> _humanInputQueue;
+    private readonly IMessageQueue<ChatResponse> _chatResponseQueue;
     private readonly AIAgent _aiAgent;
     private AutonomousAgent? _agent;
 
     public HumanInputHandler(
         ILogger<HumanInputHandler> logger,
         StateManager stateManager,
-        IShortTermMemoryService shortTermMemory,
+        IMessageQueue<HumanInput> humanInputQueue,
+        IMessageQueue<ChatResponse> chatResponseQueue,
         AIAgent aiAgent)
     {
         _logger = logger;
         _stateManager = stateManager;
-        _shortTermMemory = shortTermMemory;
+        _humanInputQueue = humanInputQueue;
+        _chatResponseQueue = chatResponseQueue;
         _aiAgent = aiAgent;
     }
 
@@ -54,13 +57,10 @@ public class HumanInputHandler
     {
         var responses = new List<HumanInputResponse>();
 
-        // Check for chat requests in memory
-        await ProcessChatRequestsAsync(cancellationToken);
+        // Process messages from the queue
+        await ProcessQueuedInputsAsync(agent, cancellationToken);
 
-        // Check for human inputs in memory
-        await ProcessHumanInputsFromMemoryAsync(agent, cancellationToken);
-
-        // Process inputs from the queue
+        // Process inputs from the in-memory queue (legacy support)
         while (_inputQueue.TryDequeue(out var input))
         {
             try
@@ -84,63 +84,61 @@ public class HumanInputHandler
         return responses;
     }
 
-    private async Task ProcessHumanInputsFromMemoryAsync(AutonomousAgent agent, CancellationToken cancellationToken)
+    private async Task ProcessQueuedInputsAsync(AutonomousAgent agent, CancellationToken cancellationToken)
     {
         try
         {
-            // Look for human inputs in short-term memory
-            var keys = await _shortTermMemory.GetKeysAsync("human-input:*", cancellationToken);
-            
-            foreach (var key in keys)
+            // Receive messages from the human input queue
+            var messages = await _humanInputQueue.ReceiveAsync(
+                maxMessages: 10,
+                visibilityTimeout: TimeSpan.FromSeconds(30),
+                cancellationToken: cancellationToken);
+
+            foreach (var msg in messages)
             {
-                var input = await _shortTermMemory.GetAsync<HumanInput>(key, cancellationToken);
-                if (input != null && !input.Processed)
+                try
                 {
-                    _logger.LogInformation("Processing human input from memory: {Type}", input.Type);
-                    
-                    try
+                    var input = msg.Content;
+                    _logger.LogInformation("Processing queued input: {Type}", input.Type);
+
+                    // Handle chat requests separately
+                    if (input.Type == HumanInputType.ChatWithAgent)
                     {
+                        await ProcessChatRequestAsync(input, msg.MessageId, msg.PopReceipt, cancellationToken);
+                    }
+                    else
+                    {
+                        // Process other human inputs
                         await ProcessInputAsync(input, agent, cancellationToken);
                         
-                        // Mark as processed and remove from memory
-                        input.Processed = true;
-                        await _shortTermMemory.DeleteAsync(key, cancellationToken);
+                        // Delete message after successful processing
+                        await _humanInputQueue.DeleteAsync(msg.MessageId, msg.PopReceipt, cancellationToken);
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error processing human input from memory {Id}", input.Id);
-                        await _shortTermMemory.DeleteAsync(key, cancellationToken);
-                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing queued input {MessageId}", msg.MessageId);
+                    // Message will become visible again for retry
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing human inputs from memory");
+            _logger.LogError(ex, "Error receiving messages from human input queue");
         }
     }
 
-    private async Task ProcessChatRequestsAsync(CancellationToken cancellationToken)
+    private async Task ProcessChatRequestAsync(HumanInput chatRequest, string messageId, string popReceipt, CancellationToken cancellationToken)
     {
         try
         {
-            // Look for chat requests in short-term memory
-            var keys = await _shortTermMemory.GetKeysAsync("chat-request:*", cancellationToken);
-            
-            foreach (var key in keys)
-            {
-                var chatRequest = await _shortTermMemory.GetAsync<HumanInput>(key, cancellationToken);
-                if (chatRequest != null && chatRequest.Type == HumanInputType.ChatWithAgent)
-                {
-                    _logger.LogInformation("Processing chat request: {Content}", chatRequest.Content);
-                    
-                    try
-                    {
-                        // Get a new thread for this chat conversation
-                        var chatThread = _aiAgent.GetNewThread();
-                        
-                        // Create a prompt that includes context about the agent's knowledge
-                        var prompt = $@"You are ALAN, an autonomous AI agent. A human user is chatting with you to learn about your knowledge and capabilities.
+            _logger.LogInformation("Processing chat request: {Content}", chatRequest.Content);
+
+            // Get a new thread for this chat conversation
+            var chatThread = _aiAgent.GetNewThread();
+
+            // Create a prompt that includes context about the agent's knowledge
+            var prompt = $@"You are ALAN, an autonomous AI agent. A human user is chatting with you to learn about your knowledge and capabilities.
 
 User message: {chatRequest.Content}
 
@@ -152,49 +150,40 @@ Please respond naturally and helpfully. You can share:
 
 Keep your response concise and conversational.";
 
-                        var result = await _aiAgent.RunAsync(prompt, chatThread, cancellationToken: cancellationToken);
-                        var responseText = result.Text ?? result.ToString();
+            var result = await _aiAgent.RunAsync(prompt, chatThread, cancellationToken: cancellationToken);
+            var responseText = result.Text ?? result.ToString();
 
-                        // Store the response
-                        var chatResponse = new ChatResponse
-                        {
-                            MessageId = chatRequest.Id,
-                            Response = responseText,
-                            Timestamp = DateTime.UtcNow
-                        };
+            // Send the response to the chat response queue
+            var chatResponse = new ChatResponse
+            {
+                MessageId = chatRequest.Id,
+                Response = responseText,
+                Timestamp = DateTime.UtcNow
+            };
 
-                        await _shortTermMemory.SetAsync(
-                            $"chat-response:{chatRequest.Id}",
-                            chatResponse,
-                            TimeSpan.FromMinutes(5),
-                            cancellationToken);
+            await _chatResponseQueue.SendAsync(chatResponse, cancellationToken);
+            
+            // Delete the chat request message after successful processing
+            await _humanInputQueue.DeleteAsync(messageId, popReceipt, cancellationToken);
 
-                        _logger.LogInformation("Chat response generated for request {Id}", chatRequest.Id);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error generating chat response");
-                        
-                        // Store error response
-                        var errorResponse = new ChatResponse
-                        {
-                            MessageId = chatRequest.Id,
-                            Response = "I'm sorry, I encountered an error processing your message. Please try again.",
-                            Timestamp = DateTime.UtcNow
-                        };
-
-                        await _shortTermMemory.SetAsync(
-                            $"chat-response:{chatRequest.Id}",
-                            errorResponse,
-                            TimeSpan.FromMinutes(5),
-                            cancellationToken);
-                    }
-                }
-            }
+            _logger.LogInformation("Chat response sent for request {Id}", chatRequest.Id);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing chat requests");
+            _logger.LogError(ex, "Error generating chat response");
+
+            // Send error response
+            var errorResponse = new ChatResponse
+            {
+                MessageId = chatRequest.Id,
+                Response = "I'm sorry, I encountered an error processing your message. Please try again.",
+                Timestamp = DateTime.UtcNow
+            };
+
+            await _chatResponseQueue.SendAsync(errorResponse, cancellationToken);
+            
+            // Delete the chat request message to prevent retry
+            await _humanInputQueue.DeleteAsync(messageId, popReceipt, cancellationToken);
         }
     }
 

@@ -1,5 +1,5 @@
 using ALAN.Shared.Models;
-using ALAN.Shared.Services.Memory;
+using ALAN.Shared.Services.Queue;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ALAN.Web.Controllers;
@@ -9,14 +9,17 @@ namespace ALAN.Web.Controllers;
 public class ChatController : ControllerBase
 {
     private readonly ILogger<ChatController> _logger;
-    private readonly IShortTermMemoryService _shortTermMemory;
+    private readonly IMessageQueue<HumanInput> _chatRequestQueue;
+    private readonly IMessageQueue<ChatResponse> _chatResponseQueue;
 
     public ChatController(
         ILogger<ChatController> logger,
-        IShortTermMemoryService shortTermMemory)
+        IMessageQueue<HumanInput> chatRequestQueue,
+        IMessageQueue<ChatResponse> chatResponseQueue)
     {
         _logger = logger;
-        _shortTermMemory = shortTermMemory;
+        _chatRequestQueue = chatRequestQueue;
+        _chatResponseQueue = chatResponseQueue;
     }
 
     [HttpPost("chat")]
@@ -31,14 +34,7 @@ public class ChatController : ControllerBase
 
         try
         {
-            // Create a chat message
-            var chatMessage = new ChatMessage
-            {
-                Role = ChatMessageRole.Human,
-                Content = request.Message
-            };
-
-            // Store chat request in memory for agent to pick up
+            // Create a human input for chat
             var humanInput = new HumanInput
             {
                 Type = HumanInputType.ChatWithAgent,
@@ -46,31 +42,31 @@ public class ChatController : ControllerBase
                 Timestamp = DateTime.UtcNow
             };
 
-            // Store the input for the agent to process
-            await _shortTermMemory.SetAsync(
-                $"chat-request:{humanInput.Id}",
-                humanInput,
-                TimeSpan.FromMinutes(5),
-                cancellationToken);
+            // Send to chat request queue
+            await _chatRequestQueue.SendAsync(humanInput, cancellationToken);
 
-            // Wait for response (polling with timeout)
+            // Poll for response with timeout
             var maxWaitTime = TimeSpan.FromSeconds(30);
             var startTime = DateTime.UtcNow;
             var pollInterval = TimeSpan.FromMilliseconds(500);
 
             while (DateTime.UtcNow - startTime < maxWaitTime)
             {
-                var response = await _shortTermMemory.GetAsync<ChatResponse>(
-                    $"chat-response:{humanInput.Id}",
-                    cancellationToken);
+                // Check response queue for matching response
+                var messages = await _chatResponseQueue.ReceiveAsync(
+                    maxMessages: 10,
+                    visibilityTimeout: TimeSpan.FromSeconds(5),
+                    cancellationToken: cancellationToken);
 
-                if (response != null)
+                foreach (var msg in messages)
                 {
-                    // Clean up the request and response from memory
-                    await _shortTermMemory.DeleteAsync($"chat-request:{humanInput.Id}", cancellationToken);
-                    await _shortTermMemory.DeleteAsync($"chat-response:{humanInput.Id}", cancellationToken);
-
-                    return Ok(response);
+                    if (msg.Content.MessageId == humanInput.Id)
+                    {
+                        // Found our response, delete it and return
+                        await _chatResponseQueue.DeleteAsync(msg.MessageId, msg.PopReceipt, cancellationToken);
+                        return Ok(msg.Content);
+                    }
+                    // Not our message, let it become visible again
                 }
 
                 await Task.Delay(pollInterval, cancellationToken);

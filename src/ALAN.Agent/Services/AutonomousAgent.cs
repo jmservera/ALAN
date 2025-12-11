@@ -9,6 +9,16 @@ namespace ALAN.Agent.Services;
 
 public class AutonomousAgent
 {
+    // Memory configuration constants
+    private const double IMPORTANCE_WEIGHT = 0.7;
+    private const double RECENCY_WEIGHT = 0.3;
+    private const int RECENCY_CUTOFF_DAYS = 7;
+    private const int MAX_MEMORY_CONTEXT_SIZE = 20;
+    private const int MEMORY_REFRESH_INTERVAL_ITERATIONS = 10;
+    private const int MEMORY_REFRESH_INTERVAL_HOURS = 1;
+    private const double HIGH_IMPORTANCE_THRESHOLD = 0.8;
+    private const int CONTENT_PREVIEW_MAX_LENGTH = 200;
+
     private readonly AIAgent _agent;
     private readonly AgentThread _thread;
     private readonly ILogger<AutonomousAgent> _logger;
@@ -20,9 +30,12 @@ public class AutonomousAgent
     private readonly HumanInputHandler _humanInputHandler;
     private bool _isRunning;
     private bool _isPaused;
-    private string _currentPrompt = "You are an autonomous AI agent. Think about how to improve yourself.";
+    private string _receivedDirective = "Think about how to improve yourself.";
     private int _consecutiveThrottles = 0;
     private int _iterationCount = 0;
+    private volatile List<MemoryEntry> _recentMemories = new();
+    private DateTime _lastMemoryLoad = DateTime.MinValue;
+    private string _currentDirective = "";
 
     public AutonomousAgent(
         AIAgent agent,
@@ -48,7 +61,7 @@ public class AutonomousAgent
 
     public void UpdatePrompt(string prompt)
     {
-        _currentPrompt = prompt;
+        _receivedDirective = prompt;
         _stateManager.UpdatePrompt(prompt);
         _logger.LogInformation("Prompt updated: {Prompt}", prompt);
     }
@@ -71,6 +84,9 @@ public class AutonomousAgent
     {
         _isRunning = true;
         _logger.LogInformation("Autonomous agent started");
+
+        // Load initial memories from long-term storage
+        await LoadRecentMemoriesAsync(cancellationToken);
 
         // Log initial usage stats
         var stats = _usageTracker.GetTodayStats();
@@ -118,6 +134,15 @@ public class AutonomousAgent
                 }
 
                 _consecutiveThrottles = 0;
+
+                // Refresh memories periodically before thinking (every N iterations or M hours)
+                // Skip refresh on iteration 0 since memories were just loaded at startup
+                if ((_iterationCount > 0 && _iterationCount % MEMORY_REFRESH_INTERVAL_ITERATIONS == 0) ||
+                    (DateTime.UtcNow - _lastMemoryLoad).TotalHours >= MEMORY_REFRESH_INTERVAL_HOURS)
+                {
+                    await LoadRecentMemoriesAsync(cancellationToken);
+                }
+
                 await ThinkAndActAsync(cancellationToken);
 
                 // Record the loop execution
@@ -144,6 +169,99 @@ public class AutonomousAgent
         _logger.LogInformation("Agent stopped. Final usage: {Stats}", finalStats);
     }
 
+    /// <summary>
+    /// Loads recent memories and learnings from long-term storage to provide context for decision-making.
+    /// This ensures the agent builds on previous knowledge rather than starting from scratch each iteration.
+    /// </summary>
+    internal async Task LoadRecentMemoriesAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Loading recent memories from long-term storage...");
+
+            // Optimize memory loading by fetching in parallel and limiting results
+            var learningsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Learning, maxResults: 10, cancellationToken);
+            var successesTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Success, maxResults: 10, cancellationToken);
+            var reflectionsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Reflection, maxResults: 5, cancellationToken);
+            var decisionsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Decision, maxResults: 10, cancellationToken);
+            var actionKeysTask = _shortTermMemory.GetKeysAsync("action:*", cancellationToken);
+
+            // Wait for all tasks to complete in parallel
+            await Task.WhenAll(learningsTask, successesTask, reflectionsTask, decisionsTask, actionKeysTask);
+
+            // Combine and sort by importance and recency with gradual decay
+            // Capacity = 10 (learnings) + 10 (successes) + 5 (reflections) + 10 (decisions) = 35
+            var allMemories = new List<MemoryEntry>(35);
+            allMemories.AddRange(learningsTask.Result);
+            allMemories.AddRange(successesTask.Result);
+            allMemories.AddRange(reflectionsTask.Result);
+            allMemories.AddRange(decisionsTask.Result);
+
+            // Sort and take top memories in a single pass
+            _recentMemories = allMemories
+                .OrderByDescending(m =>
+                    m.Importance * IMPORTANCE_WEIGHT +
+                    Math.Max(0, 1.0 - (DateTime.UtcNow - m.Timestamp).TotalDays / RECENCY_CUTOFF_DAYS) * RECENCY_WEIGHT
+                )
+                .Take(MAX_MEMORY_CONTEXT_SIZE)
+                .ToList();
+
+            // Load recent short-term actions in parallel (limit to 10 most recent)
+            var actionKeys = actionKeysTask.Result;
+            // Fetch all actions for the keys, then sort by Timestamp descending and take the 10 most recent
+            var actionTasks = actionKeys.Select(key => _shortTermMemory.GetAsync<AgentAction>(key, cancellationToken));
+            var allActions = await Task.WhenAll(actionTasks);
+            var shortTermActions = allActions
+                .Where(a => a != null)
+                .Select(a => a!)
+                .OrderByDescending(a => a.Timestamp)
+                .Take(10)
+                .ToList();
+
+            // Convert recent successful actions to memory entries efficiently
+            if (shortTermActions != null && shortTermActions.Count != 0)
+            {
+                var recentActionMemories = shortTermActions
+                    .Where(a => a.Status == ActionStatus.Completed)
+                    .OrderByDescending(a => a.Timestamp)
+                    .Take(5)
+                    .Select(a => new MemoryEntry
+                    {
+                        Type = MemoryType.Success,
+                        Content = a.Output ?? a.Input,
+                        Summary = a.Output ?? a.Description ?? string.Empty,
+                        Timestamp = a.Timestamp,
+                        Importance = 0.5, // Lower importance for actions (will be consolidated later)
+                        Tags = ["short-term", "action", "recent"]
+                    })
+                    .ToList();
+
+                // Prepend short-term memories and limit to MAX_MEMORY_CONTEXT_SIZE
+                if (recentActionMemories.Count != 0)
+                {
+                    _recentMemories = [.. recentActionMemories
+                        .Concat(_recentMemories)
+                        .Take(MAX_MEMORY_CONTEXT_SIZE)];
+                }
+            }
+
+            _lastMemoryLoad = DateTime.UtcNow;
+
+            // Log actual counts from the final _recentMemories list
+            var learningsInContext = _recentMemories.Count(m => m.Type == MemoryType.Learning);
+            var successesInContext = _recentMemories.Count(m => m.Type == MemoryType.Success);
+            var reflectionsInContext = _recentMemories.Count(m => m.Type == MemoryType.Reflection);
+            var decisionsInContext = _recentMemories.Count(m => m.Type == MemoryType.Decision);
+            _logger.LogInformation("Loaded {Count} memories: {Learnings} learnings, {Successes} successes, {Reflections} reflections, {Decisions} decisions",
+                _recentMemories.Count, learningsInContext, successesInContext, reflectionsInContext, decisionsInContext);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load recent memories, continuing with empty context");
+            _recentMemories = [];
+        }
+    }
+
     private async Task ThinkAndActAsync(CancellationToken cancellationToken)
     {
         _stateManager.UpdateStatus(AgentStatus.Thinking);
@@ -151,28 +269,45 @@ public class AutonomousAgent
         // Store current time to short-term memory
         await _shortTermMemory.SetAsync("last-think-time", DateTime.UtcNow, TimeSpan.FromHours(1), cancellationToken);
 
-        // Record observation
-        var observation = new AgentThought
+        if (_currentDirective != _receivedDirective)
         {
-            Type = ThoughtType.Observation,
-            Content = _currentPrompt
-        };
-        _stateManager.AddThought(observation);
-        _logger.LogInformation("Agent observed: {Content}", observation.Content);
+            _logger.LogInformation("New directive received: {Directive}", _receivedDirective);
+            _currentDirective = _receivedDirective;
+
+            // Record observation
+            var observation = new AgentThought
+            {
+                Type = ThoughtType.Observation,
+                Content = _receivedDirective
+            };
+            _stateManager.AddThought(observation);
+            _logger.LogInformation("Agent observed: {Content}", observation.Content);
+        }
 
         // Get AI response
-        var prompt = $@"You are an autonomous agent. Your current directive is: {_currentPrompt}
+        var prompt = $@"You are an autonomous agent. Your current directive is: {_receivedDirective}
 
 You have access to the following tools:
 - GitHub MCP Server: Query repositories, read files, search code, view commits
 - Microsoft Learn MCP Server: Fetch documentation, search learning resources
 
-Previous thoughts and actions are stored in your memory.
-Think about what you should do next. Use the available tools when they would be helpful.
+IMPORTANT: Your memory from previous iterations is preserved below. Build upon this knowledge - don't start from scratch.
+
+## YOUR ACCUMULATED KNOWLEDGE ({_recentMemories.Count} memories loaded):
+{BuildMemoryContext()}
+
+Previous thoughts and actions are stored in your memory and shown above.
+Think about what you should do next based on your accumulated knowledge. Use the available tools when they would be helpful.
 For example, you can search GitHub for code examples, read documentation from Microsoft Learn, or analyze repository files.
 
+When making decisions, consider:
+1. What you've learned from previous iterations (shown above)
+2. What worked well in the past (successes)
+3. What insights you've gained (learnings and reflections)
+4. How to build incrementally on existing knowledge
+
 Respond with a JSON object containing:
-- reasoning: your thought process (mention if you plan to use any tools)
+- reasoning: your thought process (mention previous knowledge you're building on and if you plan to use any tools)
 - actions: the specific action(s) you will take as an array of:
     - action: the action to perform
     - goal: what you're trying to achieve
@@ -180,15 +315,15 @@ Respond with a JSON object containing:
 
 Example:
 {{
-  ""reasoning"": ""I should search GitHub for examples of autonomous agents to learn from them"",
+  ""reasoning"": ""Based on my previous learning about X, I should now explore Y. I'll use GitHub to search for examples."",
   ""actions"": [{{
-    ""action"": ""Search GitHub repositories for autonomous agent implementations"",
-    ""goal"": ""Learn from existing autonomous agent projects"",
-    ""extra"": ""I found several repositories that look promising:\n1. **Architecture**: abc from https://abc.com .\n2. **Semantic Kernel Integration**: The project incorporates Semantic Kernel, enhancing its AI capabilities. Ensuring a robust integration with Semantic Kernel can allow for more advanced reasoning and task handling in my implementation.""
+    ""action"": ""Search GitHub repositories for Y implementations"",
+    ""goal"": ""Build on my understanding of X by learning about Y"",
+    ""extra"": ""This extends my knowledge from iteration #123 where I learned about X""
   }}]
 }}
 ";
-
+        _logger.LogTrace("Agent prompt: {Prompt}", prompt.Length > 500 ? string.Concat(prompt.AsSpan(0, 500), "...") : prompt);
         try
         {
             var result = await _agent.RunAsync(prompt, _thread, cancellationToken: cancellationToken);
@@ -231,7 +366,7 @@ Example:
                 Content = $"Azure OpenAI API error (Status {clientEx.Status}): {clientEx.Message}",
                 Summary = "API communication error",
                 Importance = 0.6,
-                Tags = new List<string> { "error", "api", "azure-openai" }
+                Tags = ["error", "api", "azure-openai"]
             };
             await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
         }
@@ -247,7 +382,7 @@ Example:
                 Content = $"Error during thinking: {ex.Message}",
                 Summary = "Agent error",
                 Importance = 0.7,
-                Tags = new List<string> { "error", "system" }
+                Tags = ["error", "system"]
             };
             await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
         }
@@ -467,9 +602,69 @@ Be specific about which tools you use and what you discover.";
         return null;
     }
 
+    /// <summary>
+    /// Builds a formatted string containing relevant memory context for the current iteration.
+    /// This provides the agent with accumulated knowledge from previous iterations.
+    /// </summary>
+    internal string BuildMemoryContext()
+    {
+        if (!_recentMemories.Any())
+        {
+            return "No previous memories available yet. This may be your first iteration.";
+        }
+
+        var context = new System.Text.StringBuilder();
+
+        // Group memories by type for better organization
+        var groupedMemories = _recentMemories.GroupBy(m => m.Type).OrderByDescending(g => g.Key switch
+        {
+            MemoryType.Learning => 5,
+            MemoryType.Reflection => 4,
+            MemoryType.Success => 3,
+            MemoryType.Decision => 2,
+            _ => 1
+        });
+
+        foreach (var group in groupedMemories)
+        {
+            var entryWord = group.Count() == 1 ? "entry" : "entries";
+            context.AppendLine($"\n### {group.Key} ({group.Count()} {entryWord}):");
+
+            foreach (var memory in group.OrderByDescending(m => m.Importance).Take(5))
+            {
+                var age = (DateTime.UtcNow - memory.Timestamp).TotalHours;
+                var ageStr = age < 24 ? $"{age:F0}h ago" : $"{age / 24:F0}d ago";
+
+                context.AppendLine($"- [{ageStr}, importance: {memory.Importance:F2}] {memory.Summary}");
+
+                // Include full content for high-importance items
+                if (memory.Importance >= HIGH_IMPORTANCE_THRESHOLD && !string.IsNullOrEmpty(memory.Content) && memory.Content != memory.Summary)
+                {
+                    var contentPreview = memory.Content.Length > CONTENT_PREVIEW_MAX_LENGTH
+                        ? memory.Content.Substring(0, CONTENT_PREVIEW_MAX_LENGTH) + "..."
+                        : memory.Content;
+                    context.AppendLine($"  Details: {contentPreview}");
+                }
+            }
+        }
+
+        return context.ToString();
+    }
+
     public void Stop()
     {
         _isRunning = false;
+    }
+
+    // Internal methods for testing purposes
+    internal void SetRecentMemoriesForTesting(List<MemoryEntry> memories)
+    {
+        _recentMemories = memories;
+    }
+
+    internal List<MemoryEntry> GetRecentMemoriesForTesting()
+    {
+        return _recentMemories;
     }
 }
 

@@ -141,15 +141,34 @@ For distributed short-term memory, replace `InMemoryShortTermMemoryService` with
 3. **Maintenance** - Old memories are automatically cleaned up
 4. **Searchability** - Memories can be queried by content, type, or tags
 5. **Importance Weighting** - Critical memories are retained longer
+6. **Knowledge Continuity** - Agent maintains context across iterations, building incrementally on past learnings
+7. **Additive Knowledge** - Memories are never overwritten, only added, ensuring accumulated knowledge is preserved
 
 ## Integration with Agent Loop
 
 The autonomous agent automatically:
+- **Loads recent memories at startup** - Retrieves learnings, successes, reflections, and decisions from long-term storage
+- **Includes memory context in prompts** - Each iteration includes accumulated knowledge from previous iterations
+- **Refreshes memories periodically** - Updates memory context every 10 iterations or hourly to stay current
 - Stores observations before each thinking cycle
 - Records reasoning and decisions in long-term memory
 - Logs successful actions and errors
 - Pauses for batch learning at configured intervals
-- Uses memory context to inform future decisions
+- Uses memory context to inform future decisions (memory is always additive, never overwritten)
+
+### Memory Context in Prompts
+
+Each agent iteration receives:
+- Top 20 most relevant memories (weighted by importance and recency)
+- Memories grouped by type (Learning, Success, Reflection, Decision)
+- Summary and importance score for each memory
+- Full content for high-importance memories (≥0.8)
+
+This ensures the agent:
+- Builds on previous knowledge incrementally
+- Doesn't repeat failed approaches
+- Leverages successful patterns
+- Maintains continuity across iterations
 
 ## Future Enhancements
 
@@ -158,3 +177,18 @@ The autonomous agent automatically:
 - Cross-agent memory sharing
 - Knowledge graph construction
 - Automated memory categorization
+
+### Multi-Agent Architecture Considerations
+
+The current design is prepared for future multi-agent scenarios:
+
+1. **Interface-based Memory Services** - `ILongTermMemoryService` and `IShortTermMemoryService` allow different agents to use shared or isolated memory stores
+2. **Memory Tagging** - Tags enable filtering memories by agent, task type, or domain
+3. **Tool Isolation** - MCP integration pattern supports agent-specific tools (e.g., Playwright for web agents, Python sandbox for code agents)
+4. **Additive Knowledge** - Memory append-only design ensures agents can safely share knowledge without conflicts
+
+Future multi-agent capabilities could include:
+- **Specialized Agents**: Web navigation agent (with Playwright), code execution agent (with Python sandbox), research agent (with enhanced search)
+- **Agent Coordination**: Shared long-term memory with agent-specific short-term memory
+- **Knowledge Transfer**: Learnings from one agent available to others through consolidated memories
+- **Task Delegation**: Primary agent delegating specialized tasks to domain-specific agents

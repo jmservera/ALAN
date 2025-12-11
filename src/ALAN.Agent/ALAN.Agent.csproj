@@ -32,4 +32,8 @@
     <ProjectReference Include="..\ALAN.Shared\ALAN.Shared.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ALAN.Agent.Tests" />
+  </ItemGroup>
+
 </Project>

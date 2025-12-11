@@ -129,14 +129,33 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 
 1. `AgentHostedService.ExecuteAsync()` starts the service
 2. `AutonomousAgent.RunAsync()` runs the infinite loop
-3. `UsageTracker.CanExecuteLoop()` checks daily limits
-4. `ThinkAndActAsync()` generates thoughts and actions
-5. `StateManager` stores thoughts/actions to **short-term memory only** (8-hour TTL)
-6. `MemoryConsolidationService.ConsolidateShortTermMemoryAsync()` runs every 6 hours to:
+3. **`LoadRecentMemoriesAsync()` loads accumulated knowledge** from long-term storage at startup
+4. `UsageTracker.CanExecuteLoop()` checks daily limits
+5. `ThinkAndActAsync()` generates thoughts and actions **with memory context** from previous iterations
+6. `StateManager` stores thoughts/actions to **short-term memory only** (8-hour TTL)
+7. **Memory refresh** occurs every 10 iterations or hourly to keep context current
+8. `MemoryConsolidationService.ConsolidateShortTermMemoryAsync()` runs every 6 hours to:
    - Read thoughts and actions from short-term memory
    - Evaluate importance of each item
    - Promote important items (importance ≥ 0.5) to long-term memory with "consolidated" tag
    - Extract learnings from consolidated memories
+
+### Memory Context in Agent Loop
+
+The agent maintains continuity across iterations through:
+- **Initial Load**: Loads top 20 memories at startup (learnings, successes, reflections, decisions)
+- **Periodic Refresh**: Updates memory context every 10 iterations or hourly
+- **Weighted Selection**: Combines importance (70%) and recency (30%) to prioritize relevant memories
+- **Prompt Integration**: Includes formatted memory context in each `ThinkAndActAsync()` prompt
+- **Additive Knowledge**: Memories are append-only, never overwritten
+
+Configuration constants in `AutonomousAgent.cs`:
+- `MAX_MEMORY_CONTEXT_SIZE = 20` - Max memories included in context
+- `MEMORY_REFRESH_INTERVAL_ITERATIONS = 10` - Iterations between refreshes
+- `MEMORY_REFRESH_INTERVAL_HOURS = 1` - Hours between refreshes
+- `IMPORTANCE_WEIGHT = 0.7` - Weight for importance in memory scoring
+- `RECENCY_WEIGHT = 0.3` - Weight for recency in memory scoring
+- `HIGH_IMPORTANCE_THRESHOLD = 0.8` - Threshold for including full content
 
 ### Web Update Flow
 
@@ -159,11 +178,164 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 → Check `StateManager.AddThought()` and short-term memory storage
 → Verify `AgentStateService` is reading from short-term memory correctly
 
+**Agent has no memory of previous iterations:**
+→ Check `LoadRecentMemoriesAsync()` is being called at startup
+→ Verify long-term memory service is properly configured
+→ Review memory refresh logic (every 10 iterations or hourly)
+→ Check that `BuildMemoryContext()` is formatting memories correctly
+
 **SignalR connection failed:**
 → Falls back to polling mode automatically (see `Index.cshtml`)
 
 **Azure OpenAI authentication errors:**
 → Verify managed identity and endpoint configuration
+
+## Best Practices
+
+### Architecture and code Best Practices
+
+#### Security
+
+- **Use managed identity** for Azure service authentication (avoid connection strings with secrets)
+- **Validate all inputs** - Sanitize user inputs, especially in `HumanInputHandler`
+- **Use parameterized queries** - Prevent injection attacks in any data access
+- **Implement proper authorization** - Verify permissions before sensitive operations
+- **Avoid logging sensitive data** - Never log tokens, secrets, or PII
+- **Use secure defaults** - HTTPS, secure cookies, proper CORS configuration
+
+#### Reliability
+
+- **Implement retry policies** - Use Polly for transient fault handling with Azure services
+- **Use circuit breaker patterns** - Prevent cascading failures in distributed systems
+- **Handle exceptions gracefully** - Use try-catch with specific exception types
+- **Implement health checks** - Monitor service health for `ALAN.Agent` and `ALAN.Web`
+- **Use cancellation tokens** - Support graceful shutdown in background services
+- **Validate configuration** - Fail fast on missing required settings at startup
+
+#### Resiliency
+
+- **Design for failure** - Assume Azure services may be temporarily unavailable
+- **Implement idempotency** - State changes should be safe to retry
+- **Use appropriate timeouts** - Prevent indefinite waits on external calls
+- **Log meaningful context** - Include correlation IDs for distributed tracing
+- **Graceful degradation** - UI should work with SignalR fallback to polling
+
+#### Code Style
+
+- **Use `async/await` properly** - Avoid `.Result` and `.Wait()` (deadlock risk)
+- **Dispose resources** - Use `using` statements or implement `IAsyncDisposable`
+- **Prefer immutability** - Use `record` types for DTOs, `readonly` for fields
+- **Use nullable reference types** - Enable `#nullable enable` and handle nulls explicitly
+- **Follow naming conventions** - PascalCase for public members, camelCase for private
+- **Keep methods focused** - Single responsibility, under 30 lines when possible
+- **Use dependency injection** - Register services in `Program.cs`, avoid `new` in classes
+
+#### Modern C# Features (C# 12+)
+
+**Collection Expressions** - Use `[]` syntax for all collection initialization:
+```csharp
+// ✅ Preferred - Modern collection expressions
+string[] vowels = ["a", "e", "i", "o", "u"];
+List<int> numbers = [1, 2, 3, 4, 5];
+IEnumerable<string> names = ["Alice", "Bob", "Charlie"];
+Span<int> span = [1, 2, 3];
+
+// ❌ Avoid - Old syntax
+string[] vowels = new[] { "a", "e", "i", "o", "u" };
+var numbers = new List<int> { 1, 2, 3, 4, 5 };
+```
+
+**Spread Operator** - Use `..` to expand collections inline:
+```csharp
+// ✅ Preferred - Spread operator
+int[] row1 = [1, 2, 3];
+int[] row2 = [4, 5, 6];
+int[] combined = [..row1, ..row2, 7, 8];
+
+// Conditional spreading
+bool includeExtra = true;
+int[] result = [..numbers, ..includeExtra ? [99, 100] : []];
+
+// ❌ Avoid - Manual concatenation
+var combined = row1.Concat(row2).Append(7).Append(8).ToArray();
+```
+
+**Primary Constructors** - Use for dependency injection and simple initialization:
+```csharp
+// ✅ Preferred - Primary constructor
+public class ExampleService(ILogger<ExampleService> logger, IConfiguration config)
+{
+    public void DoWork() => logger.LogInformation("Working with {Config}", config);
+}
+
+// ❌ Avoid - Traditional constructor with field assignment
+public class ExampleService
+{
+    private readonly ILogger<ExampleService> _logger;
+    private readonly IConfiguration _config;
+    
+    public ExampleService(ILogger<ExampleService> logger, IConfiguration config)
+    {
+        _logger = logger;
+        _config = config;
+    }
+}
+```
+
+**Collection Expressions Best Practices**:
+- Use `[]` for empty collections instead of `new List<T>()` or `Array.Empty<T>()`
+- Prefer collection expressions for all collection types (arrays, lists, spans, IEnumerable)
+- Use spread `..` to combine collections efficiently
+- Leverage target-typing - no need to specify type when it's inferred
+
+**When to Use Each Feature**:
+- **Collection expressions**: Any time you initialize a collection with values
+- **Spread operator**: Combining multiple collections, conditional element inclusion
+- **Primary constructors**: Dependency injection, immutable data classes, simple initialization
+- **`required` properties**: Force property initialization without constructor parameters
+
+#### Architecture Patterns
+
+- **Clean separation of concerns** - Agent logic, Web UI, and Shared models are separate projects
+- **Repository pattern** - `IShortTermMemoryService` and `ILongTermMemoryService` abstract storage
+- **Event-driven updates** - Use events for state changes (see `StateManager`)
+- **Background services** - Use `IHostedService` for long-running operations
+- **Options pattern** - Configure services via `IOptions<T>` from `appsettings.json`
+
+#### Reference Documentation
+
+- [Azure Well-Architected Framework](https://learn.microsoft.com/azure/well-architected/)
+- [.NET Application Architecture](https://learn.microsoft.com/dotnet/architecture/)
+- [Semantic Kernel Documentation](https://learn.microsoft.com/semantic-kernel/)
+- [ASP.NET Core Security Best Practices](https://learn.microsoft.com/aspnet/core/security/)
+
+### Memory System
+
+**ALWAYS maintain knowledge continuity:**
+- Agent must load memories at startup via `LoadRecentMemoriesAsync()`
+- Include memory context in all AI prompts (see `ThinkAndActAsync()`)
+- Refresh memories periodically (current: every 10 iterations or hourly)
+- Never overwrite memories - only append via `StoreMemoryAsync()`
+
+**When modifying the agent loop:**
+- Ensure memory loading happens before first iteration
+- Include `BuildMemoryContext()` output in prompts
+- Maintain the importance + recency weighting system
+- Respect the additive-only memory pattern
+
+**When adding new memory types:**
+- Update `LoadRecentMemoriesAsync()` to include the new type
+- Adjust weights in `BuildMemoryContext()` grouping logic
+- Consider how the type affects importance calculations
+- Document any new memory patterns
+
+### Future Multi-Agent Considerations
+
+The architecture is prepared for multiple specialized agents:
+- Interface-based memory services enable shared or isolated stores
+- Memory tagging supports agent-specific filtering
+- MCP integration pattern allows agent-specific tools
+- Additive memory design prevents conflicts
 
 ## Testing Requirements
 
@@ -212,66 +384,11 @@ dotnet test --verbosity normal
 
 For detailed test documentation, see `TEST_SUITE_SUMMARY.md`.
 
-## C# Best Practices & Reference Architecture
-
-### Code Quality Standards
-
-When writing or modifying code, follow these C# best practices:
-
-#### Security
-
-- **Use managed identity** for Azure service authentication (avoid connection strings with secrets)
-- **Validate all inputs** - Sanitize user inputs, especially in `HumanInputHandler`
-- **Use parameterized queries** - Prevent injection attacks in any data access
-- **Implement proper authorization** - Verify permissions before sensitive operations
-- **Avoid logging sensitive data** - Never log tokens, secrets, or PII
-- **Use secure defaults** - HTTPS, secure cookies, proper CORS configuration
-
-#### Reliability
-
-- **Implement retry policies** - Use Polly for transient fault handling with Azure services
-- **Use circuit breaker patterns** - Prevent cascading failures in distributed systems
-- **Handle exceptions gracefully** - Use try-catch with specific exception types
-- **Implement health checks** - Monitor service health for `ALAN.Agent` and `ALAN.Web`
-- **Use cancellation tokens** - Support graceful shutdown in background services
-- **Validate configuration** - Fail fast on missing required settings at startup
-
-#### Resiliency
-
-- **Design for failure** - Assume Azure services may be temporarily unavailable
-- **Implement idempotency** - State changes should be safe to retry
-- **Use appropriate timeouts** - Prevent indefinite waits on external calls
-- **Log meaningful context** - Include correlation IDs for distributed tracing
-- **Graceful degradation** - UI should work with SignalR fallback to polling
-
-#### Code Style
-
-- **Use `async/await` properly** - Avoid `.Result` and `.Wait()` (deadlock risk)
-- **Dispose resources** - Use `using` statements or implement `IAsyncDisposable`
-- **Prefer immutability** - Use `record` types for DTOs, `readonly` for fields
-- **Use nullable reference types** - Enable `#nullable enable` and handle nulls explicitly
-- **Follow naming conventions** - PascalCase for public members, camelCase for private
-- **Keep methods focused** - Single responsibility, under 30 lines when possible
-- **Use dependency injection** - Register services in `Program.cs`, avoid `new` in classes
-
-#### Architecture Patterns
-
-- **Clean separation of concerns** - Agent logic, Web UI, and Shared models are separate projects
-- **Repository pattern** - `IShortTermMemoryService` and `ILongTermMemoryService` abstract storage
-- **Event-driven updates** - Use events for state changes (see `StateManager`)
-- **Background services** - Use `IHostedService` for long-running operations
-- **Options pattern** - Configure services via `IOptions<T>` from `appsettings.json`
-
-### Reference Documentation
-
-- [Azure Well-Architected Framework](https://learn.microsoft.com/azure/well-architected/)
-- [.NET Application Architecture](https://learn.microsoft.com/dotnet/architecture/)
-- [Semantic Kernel Documentation](https://learn.microsoft.com/semantic-kernel/)
-- [ASP.NET Core Security Best Practices](https://learn.microsoft.com/aspnet/core/security/)
-
 ## Quick Reference
 
 - **Agent Loop Interval**: 5 seconds (configurable in `AutonomousAgent`)
+- **Memory Refresh**: Every 10 iterations OR every 1 hour (whichever comes first)
+- **Memory Context Size**: Top 20 most relevant memories (importance × 0.7 + recency × 0.3)
 - **Cost Limits**: See `UsageTracker` (default: 4000 loops/day, 8M tokens/day)
 - **Storage**: Azurite on port 10000 (local), Azure Blob Storage (production)
 - **Short-term Memory TTL**: 8 hours for thoughts/actions, 1 hour for agent state

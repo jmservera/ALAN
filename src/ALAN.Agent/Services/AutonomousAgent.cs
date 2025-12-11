@@ -134,15 +134,16 @@ public class AutonomousAgent
                 }
 
                 _consecutiveThrottles = 0;
-                await ThinkAndActAsync(cancellationToken);
 
-                // Refresh memories periodically (every N iterations or M hours)
+                // Refresh memories periodically before thinking (every N iterations or M hours)
                 // Skip refresh on iteration 0 since memories were just loaded at startup
                 if ((_iterationCount > 0 && _iterationCount % MEMORY_REFRESH_INTERVAL_ITERATIONS == 0) ||
                     (DateTime.UtcNow - _lastMemoryLoad).TotalHours >= MEMORY_REFRESH_INTERVAL_HOURS)
                 {
                     await LoadRecentMemoriesAsync(cancellationToken);
                 }
+
+                await ThinkAndActAsync(cancellationToken);
 
                 // Record the loop execution
                 _usageTracker.RecordLoop(estimatedTokens: 2000);

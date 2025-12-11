@@ -35,7 +35,7 @@ public class AutonomousAgent
     private int _iterationCount = 0;
     private List<MemoryEntry> _recentMemories = new();
     private DateTime _lastMemoryLoad = DateTime.MinValue;
-    private string _directive = "";
+    private string _currentDirective = "";
 
     public AutonomousAgent(
         AIAgent agent,
@@ -189,7 +189,7 @@ public class AutonomousAgent
             await Task.WhenAll(learningsTask, successesTask, reflectionsTask, decisionsTask, actionKeysTask);
 
             // Combine and sort by importance and recency with gradual decay
-            // Use a capacity hint for better performance
+            // Capacity = 10 (learnings) + 10 (successes) + 5 (reflections) + 10 (decisions) = 35
             var allMemories = new List<MemoryEntry>(35);
             allMemories.AddRange(learningsTask.Result);
             allMemories.AddRange(successesTask.Result);
@@ -208,12 +208,13 @@ public class AutonomousAgent
             // Load recent short-term actions in parallel (limit to 10 most recent)
             var actionKeys = actionKeysTask.Result;
             var shortTermActions = new List<AgentAction>(10);
+            var actionsLock = new object();
             var actionTasks = actionKeys.Take(10).Select(async key =>
             {
                 var action = await _shortTermMemory.GetAsync<AgentAction>(key, cancellationToken);
                 if (action != null)
                 {
-                    lock (shortTermActions)
+                    lock (actionsLock)
                     {
                         shortTermActions.Add(action);
                     }
@@ -274,10 +275,10 @@ public class AutonomousAgent
         // Store current time to short-term memory
         await _shortTermMemory.SetAsync("last-think-time", DateTime.UtcNow, TimeSpan.FromHours(1), cancellationToken);
 
-        if (_directive != _currentPrompt)
+        if (_currentDirective != _currentPrompt)
         {
             _logger.LogInformation("New directive received: {Directive}", _currentPrompt);
-            _directive = _currentPrompt;
+            _currentDirective = _currentPrompt;
 
             // Record observation
             var observation = new AgentThought

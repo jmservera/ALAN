@@ -12,6 +12,7 @@ using Azure.AI.OpenAI;
 using Azure;
 using OpenAI;
 using Azure.Identity;
+using ChatResponse = ALAN.Shared.Models.ChatResponse;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -52,11 +53,11 @@ builder.Services.AddSingleton<IMessageQueue<HumanInput>>(sp =>
         "human-inputs",
         sp.GetRequiredService<ILogger<AzureStorageQueueService<HumanInput>>>()));
 
-builder.Services.AddSingleton<IMessageQueue<ALAN.Shared.Models.ChatResponse>>(sp =>
-    new AzureStorageQueueService<ALAN.Shared.Models.ChatResponse>(
+builder.Services.AddSingleton<IMessageQueue<ChatResponse>>(sp =>
+    new AzureStorageQueueService<ChatResponse>(
         storageConnectionString,
         "chat-responses",
-        sp.GetRequiredService<ILogger<AzureStorageQueueService<ALAN.Shared.Models.ChatResponse>>>()));
+        sp.GetRequiredService<ILogger<AzureStorageQueueService<ChatResponse>>>()));
 
 // Register consolidation service (requires AIAgent, so it's registered after)
 builder.Services.AddSingleton<IMemoryConsolidationService, MemoryConsolidationService>();

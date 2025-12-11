@@ -4,6 +4,7 @@ using ALAN.Shared.Models;
 using ALAN.Web.Hubs;
 using ALAN.Web.Services;
 using System.Text.Json.Serialization;
+using ChatResponse = ALAN.Shared.Models.ChatResponse;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -47,14 +48,11 @@ builder.Services.AddSingleton<IMessageQueue<HumanInput>>(sp =>
         "human-inputs",
         sp.GetRequiredService<ILogger<AzureStorageQueueService<HumanInput>>>()));
 
-builder.Services.AddSingleton<IMessageQueue<ALAN.Shared.Models.ChatResponse>>(sp =>
-    new AzureStorageQueueService<ALAN.Shared.Models.ChatResponse>(
+builder.Services.AddSingleton<IMessageQueue<ChatResponse>>(sp =>
+    new AzureStorageQueueService<ChatResponse>(
         storageConnectionString,
         "chat-responses",
-        sp.GetRequiredService<ILogger<AzureStorageQueueService<ALAN.Shared.Models.ChatResponse>>>()));
-
-// Chat request queue is the same as human input queue since chat requests are HumanInput type
-builder.Services.AddSingleton(sp => sp.GetRequiredService<IMessageQueue<HumanInput>>());
+        sp.GetRequiredService<ILogger<AzureStorageQueueService<ChatResponse>>>()));
 
 builder.Services.AddSingleton<AgentStateService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AgentStateService>());

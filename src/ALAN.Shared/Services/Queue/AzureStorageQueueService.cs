@@ -28,9 +28,15 @@ public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
             WriteIndented = false
         };
 
-        // Create queue if it doesn't exist
-        _queueClient.CreateIfNotExists();
         _logger.LogInformation("Azure Storage Queue Service created for queue: {QueueName}", queueName);
+    }
+
+    /// <summary>
+    /// Ensures the queue exists. Should be called during service initialization.
+    /// </summary>
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        await _queueClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
     }
 
     public async Task SendAsync(T message, CancellationToken cancellationToken = default)

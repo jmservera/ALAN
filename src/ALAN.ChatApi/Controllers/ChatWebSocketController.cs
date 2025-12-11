@@ -39,27 +39,53 @@ public class ChatWebSocketController : ControllerBase
         _logger.LogInformation("WebSocket connection established for session {SessionId}", sessionId);
 
         var buffer = new byte[1024 * 4];
+        const int maxMessageSize = 1024 * 100; // 100KB max message size
 
         try
         {
             while (webSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
-                var result = await webSocket.ReceiveAsync(
-                    new ArraySegment<byte>(buffer), 
-                    cancellationToken);
-
-                if (result.MessageType == WebSocketMessageType.Close)
+                // Accumulate message fragments until EndOfMessage is true
+                using var messageBuffer = new MemoryStream();
+                WebSocketReceiveResult result;
+                
+                do
                 {
-                    _logger.LogInformation("WebSocket close requested for session {SessionId}", sessionId);
-                    await webSocket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        "Closing",
+                    result = await webSocket.ReceiveAsync(
+                        new ArraySegment<byte>(buffer),
                         cancellationToken);
-                    break;
-                }
 
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                _logger.LogDebug("Received message: {Message}", message);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        _logger.LogInformation("WebSocket close requested for session {SessionId}", sessionId);
+                        await webSocket.CloseAsync(
+                            WebSocketCloseStatus.NormalClosure,
+                            "Closing",
+                            cancellationToken);
+                        return; // Exit method
+                    }
+
+                    messageBuffer.Write(buffer, 0, result.Count);
+                    
+                    // Prevent unbounded message sizes
+                    if (messageBuffer.Length > maxMessageSize)
+                    {
+                        _logger.LogWarning("Message size exceeded {MaxSize} bytes for session {SessionId}", 
+                            maxMessageSize, sessionId);
+                        var errorResponse = new ChatWebSocketResponse
+                        {
+                            Type = "error",
+                            Content = "Message size exceeds maximum allowed size"
+                        };
+                        await SendWebSocketMessageAsync(webSocket, errorResponse, cancellationToken);
+                        continue;
+                    }
+                }
+                while (!result.EndOfMessage && webSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested);
+
+                messageBuffer.Seek(0, SeekOrigin.Begin);
+                var message = Encoding.UTF8.GetString(messageBuffer.ToArray());
+                _logger.LogDebug("Received complete message: {Message}", message);
 
                 try
                 {
@@ -79,7 +105,7 @@ public class ChatWebSocketController : ControllerBase
                                     Type = "token",
                                     Content = token
                                 };
-                                await SendWebSocketMessage(webSocket, response, cancellationToken);
+                                await SendWebSocketMessageAsync(webSocket, response, cancellationToken);
                             },
                             cancellationToken);
 
@@ -89,7 +115,7 @@ public class ChatWebSocketController : ControllerBase
                             Type = "complete",
                             Content = string.Empty
                         };
-                        await SendWebSocketMessage(webSocket, completion, cancellationToken);
+                        await SendWebSocketMessageAsync(webSocket, completion, cancellationToken);
                     }
                     else if (request?.Action == "clear")
                     {
@@ -99,7 +125,7 @@ public class ChatWebSocketController : ControllerBase
                             Type = "cleared",
                             Content = "Chat history cleared"
                         };
-                        await SendWebSocketMessage(webSocket, response, cancellationToken);
+                        await SendWebSocketMessageAsync(webSocket, response, cancellationToken);
                     }
                 }
                 catch (JsonException ex)
@@ -110,7 +136,7 @@ public class ChatWebSocketController : ControllerBase
                         Type = "error",
                         Content = "Invalid message format"
                     };
-                    await SendWebSocketMessage(webSocket, errorResponse, cancellationToken);
+                    await SendWebSocketMessageAsync(webSocket, errorResponse, cancellationToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -125,7 +151,7 @@ public class ChatWebSocketController : ControllerBase
                         Type = "error",
                         Content = "An error occurred processing your message"
                     };
-                    await SendWebSocketMessage(webSocket, errorResponse, cancellationToken);
+                    await SendWebSocketMessageAsync(webSocket, errorResponse, cancellationToken);
                 }
             }
         }
@@ -144,18 +170,39 @@ public class ChatWebSocketController : ControllerBase
         }
     }
 
-    private async Task SendWebSocketMessage(
+    private async Task SendWebSocketMessageAsync(
         WebSocket webSocket,
         ChatWebSocketResponse response,
         CancellationToken cancellationToken)
     {
-        var json = JsonSerializer.Serialize(response);
-        var bytes = Encoding.UTF8.GetBytes(json);
-        await webSocket.SendAsync(
-            new ArraySegment<byte>(bytes),
-            WebSocketMessageType.Text,
-            true,
-            cancellationToken);
+        try
+        {
+            if (webSocket.State != WebSocketState.Open)
+            {
+                _logger.LogWarning("Cannot send message - WebSocket is not in Open state: {State}", webSocket.State);
+                return;
+            }
+
+            var json = JsonSerializer.Serialize(response);
+            var bytes = Encoding.UTF8.GetBytes(json);
+            await webSocket.SendAsync(
+                new ArraySegment<byte>(bytes),
+                WebSocketMessageType.Text,
+                true,
+                cancellationToken);
+        }
+        catch (WebSocketException ex)
+        {
+            _logger.LogWarning(ex, "WebSocketException occurred while sending message. The connection may be closed or aborted.");
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogDebug("Operation was canceled while sending WebSocket message");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected exception occurred while sending WebSocket message");
+        }
     }
 }
 

@@ -49,13 +49,27 @@ The solution uses VS Code's multi-target debugging. Configuration files:
    - If not working, ask user to start the Azurite extension (not restart VS Code)
    - DO NOT troubleshoot Azurite itself - only verify port 10000 status
 
-2. **Set environment variables**
+2. **Restore client-side libraries (first time only)**
+   ```bash
+   cd src/ALAN.Web
+   dotnet tool install -g Microsoft.Web.LibraryManager.Cli
+   libman restore
+   ```
+
+3. **Set environment variables**
 
    - Copy values from `.env` to your environment
    - Required: `AZURE_OPENAI_ENDPOINT`, managed identity credentials
-   - Local storage uses Azurite on `UseDevelopmentStorage=true`
+   - Required: `AZURE_STORAGE_CONNECTION_STRING` for Azure Blob Storage (Azurite locally)
+      - Local storage uses Azurite with the default development storage connection string `DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;`
 
-3. **Launch both services**
+4. **Ensure Azurite is running**
+
+   - Verify port 10000 is open (DO NOT restart it)
+   - If not, ask user to start Azurite extension or
+   - If running in a headless environment, ensure Azurite is installed (`npm install -g azurite`) and started manually.
+
+5. **Launch both services**
    - Use the "ALAN (Agent + Web)" compound launch configuration
    - Or run individually:
      - "Launch Agent" - Starts `ALAN.Agent/Program.cs`
@@ -151,6 +165,110 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 **Azure OpenAI authentication errors:**
 → Verify managed identity and endpoint configuration
 
+## Testing Requirements
+
+### Test Suite Overview
+
+The project uses **xUnit** with **Moq** for testing. All new features and modifications **must** include corresponding unit tests.
+
+**Test Projects:**
+
+| Project           | Location                   | Coverage                                                           |
+| ----------------- | -------------------------- | ------------------------------------------------------------------ |
+| ALAN.Agent.Tests  | `tests/ALAN.Agent.Tests/`  | UsageTracker, StateManager, CodeProposalService                    |
+| ALAN.Shared.Tests | `tests/ALAN.Shared.Tests/` | AgentState, AgentThought, AgentAction, CodeProposal, Memory models |
+| ALAN.Web.Tests    | `tests/ALAN.Web.Tests/`    | AgentStateService                                                  |
+
+**Test Files:**
+
+- `tests/ALAN.Agent.Tests/Services/UsageTrackerTests.cs` - Cost control and throttling
+- `tests/ALAN.Agent.Tests/Services/StateManagerTests.cs` - State persistence and events
+- `tests/ALAN.Agent.Tests/Services/CodeProposalServiceTests.cs` - Proposal workflow
+- `tests/ALAN.Shared.Tests/Models/` - All shared model tests
+- `tests/ALAN.Web.Tests/Services/AgentStateServiceTests.cs` - Web service tests
+
+### Running Tests
+
+```bash
+# Run all tests
+dotnet test
+
+# Run specific test project
+dotnet test tests/ALAN.Agent.Tests/ALAN.Agent.Tests.csproj
+
+# Run with detailed output
+dotnet test --verbosity normal
+```
+
+### Testing Guidelines
+
+1. **Every new feature must have tests** - No PR should be merged without test coverage
+2. **Every bug fix must include a regression test** - Prevent the bug from recurring
+3. **Follow AAA pattern** - Arrange, Act, Assert structure in all tests
+4. **Use descriptive test names** - `MethodName_Scenario_ExpectedBehavior`
+5. **Mock external dependencies** - Use Moq for services, storage, and Azure clients
+6. **Test edge cases** - Include boundary conditions and error scenarios
+7. **Keep tests fast** - Unit tests should run in milliseconds
+
+For detailed test documentation, see `TEST_SUITE_SUMMARY.md`.
+
+## C# Best Practices & Reference Architecture
+
+### Code Quality Standards
+
+When writing or modifying code, follow these C# best practices:
+
+#### Security
+
+- **Use managed identity** for Azure service authentication (avoid connection strings with secrets)
+- **Validate all inputs** - Sanitize user inputs, especially in `HumanInputHandler`
+- **Use parameterized queries** - Prevent injection attacks in any data access
+- **Implement proper authorization** - Verify permissions before sensitive operations
+- **Avoid logging sensitive data** - Never log tokens, secrets, or PII
+- **Use secure defaults** - HTTPS, secure cookies, proper CORS configuration
+
+#### Reliability
+
+- **Implement retry policies** - Use Polly for transient fault handling with Azure services
+- **Use circuit breaker patterns** - Prevent cascading failures in distributed systems
+- **Handle exceptions gracefully** - Use try-catch with specific exception types
+- **Implement health checks** - Monitor service health for `ALAN.Agent` and `ALAN.Web`
+- **Use cancellation tokens** - Support graceful shutdown in background services
+- **Validate configuration** - Fail fast on missing required settings at startup
+
+#### Resiliency
+
+- **Design for failure** - Assume Azure services may be temporarily unavailable
+- **Implement idempotency** - State changes should be safe to retry
+- **Use appropriate timeouts** - Prevent indefinite waits on external calls
+- **Log meaningful context** - Include correlation IDs for distributed tracing
+- **Graceful degradation** - UI should work with SignalR fallback to polling
+
+#### Code Style
+
+- **Use `async/await` properly** - Avoid `.Result` and `.Wait()` (deadlock risk)
+- **Dispose resources** - Use `using` statements or implement `IAsyncDisposable`
+- **Prefer immutability** - Use `record` types for DTOs, `readonly` for fields
+- **Use nullable reference types** - Enable `#nullable enable` and handle nulls explicitly
+- **Follow naming conventions** - PascalCase for public members, camelCase for private
+- **Keep methods focused** - Single responsibility, under 30 lines when possible
+- **Use dependency injection** - Register services in `Program.cs`, avoid `new` in classes
+
+#### Architecture Patterns
+
+- **Clean separation of concerns** - Agent logic, Web UI, and Shared models are separate projects
+- **Repository pattern** - `IShortTermMemoryService` and `ILongTermMemoryService` abstract storage
+- **Event-driven updates** - Use events for state changes (see `StateManager`)
+- **Background services** - Use `IHostedService` for long-running operations
+- **Options pattern** - Configure services via `IOptions<T>` from `appsettings.json`
+
+### Reference Documentation
+
+- [Azure Well-Architected Framework](https://learn.microsoft.com/azure/well-architected/)
+- [.NET Application Architecture](https://learn.microsoft.com/dotnet/architecture/)
+- [Semantic Kernel Documentation](https://learn.microsoft.com/semantic-kernel/)
+- [ASP.NET Core Security Best Practices](https://learn.microsoft.com/aspnet/core/security/)
+
 ## Quick Reference
 
 - **Agent Loop Interval**: 5 seconds (configurable in `AutonomousAgent`)
@@ -159,9 +277,12 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 - **Short-term Memory TTL**: 8 hours for thoughts/actions, 1 hour for agent state
 - **Memory Consolidation**: Runs every 6 hours to promote important items to long-term storage
 - **UI Updates**: SignalR with polling fallback every 5 seconds
+- **Test Framework**: xUnit 2.9.3 with Moq 4.20.72
 
 For detailed setup instructions, see `QUICKSTART.md`.
 
 ## Final remarks
 
 When changing the codebase, ensure that these instructions are updated accordingly to reflect any new debugging steps or architecture changes.
+
+**Remember**: All code changes require accompanying tests. Follow security, reliability, and resiliency best practices in every modification.

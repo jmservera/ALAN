@@ -1,7 +1,6 @@
 using ALAN.Shared.Models;
 using ALAN.Shared.Services.Queue;
 using Microsoft.Extensions.Logging;
-using Microsoft.Agents.AI;
 using System.Collections.Concurrent;
 
 namespace ALAN.Agent.Services;
@@ -9,6 +8,7 @@ namespace ALAN.Agent.Services;
 /// <summary>
 /// Manages human input commands for steering the agent.
 /// Uses Azure Storage Queue for reliable message processing.
+/// Chat functionality is handled by the separate ChatApi service.
 /// </summary>
 public class HumanInputHandler
 {
@@ -16,22 +16,16 @@ public class HumanInputHandler
     private readonly ILogger<HumanInputHandler> _logger;
     private readonly StateManager _stateManager;
     private readonly IMessageQueue<HumanInput> _humanInputQueue;
-    private readonly IMessageQueue<ChatResponse> _chatResponseQueue;
-    private readonly AIAgent _aiAgent;
     private AutonomousAgent? _agent;
 
     public HumanInputHandler(
         ILogger<HumanInputHandler> logger,
         StateManager stateManager,
-        IMessageQueue<HumanInput> humanInputQueue,
-        IMessageQueue<ChatResponse> chatResponseQueue,
-        AIAgent aiAgent)
+        IMessageQueue<HumanInput> humanInputQueue)
     {
         _logger = logger;
         _stateManager = stateManager;
         _humanInputQueue = humanInputQueue;
-        _chatResponseQueue = chatResponseQueue;
-        _aiAgent = aiAgent;
     }
 
     public void SetAgent(AutonomousAgent agent)
@@ -88,7 +82,7 @@ public class HumanInputHandler
     {
         try
         {
-            // Receive messages from the human input queue
+            // Receive messages from the human input queue (steering commands only)
             var messages = await _humanInputQueue.ReceiveAsync(
                 maxMessages: 10,
                 visibilityTimeout: TimeSpan.FromSeconds(30),
@@ -101,19 +95,19 @@ public class HumanInputHandler
                     var input = msg.Content;
                     _logger.LogInformation("Processing queued input: {Type}", input.Type);
 
-                    // Handle chat requests separately
+                    // Skip chat requests - they are handled by ChatApi
                     if (input.Type == HumanInputType.ChatWithAgent)
                     {
-                        await ProcessChatRequestAsync(input, msg.MessageId, msg.PopReceipt, cancellationToken);
-                    }
-                    else
-                    {
-                        // Process other human inputs
-                        await ProcessInputAsync(input, agent, cancellationToken);
-                        
-                        // Delete message after successful processing
+                        _logger.LogWarning("Chat request in steering queue - deleting (should go to ChatApi)");
                         await _humanInputQueue.DeleteAsync(msg.MessageId, msg.PopReceipt, cancellationToken);
+                        continue;
                     }
+
+                    // Process steering commands
+                    await ProcessInputAsync(input, agent, cancellationToken);
+                    
+                    // Delete message after successful processing
+                    await _humanInputQueue.DeleteAsync(msg.MessageId, msg.PopReceipt, cancellationToken);
                 }
                 catch (Exception ex)
                 {
@@ -125,65 +119,6 @@ public class HumanInputHandler
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error receiving messages from human input queue");
-        }
-    }
-
-    private async Task ProcessChatRequestAsync(HumanInput chatRequest, string messageId, string popReceipt, CancellationToken cancellationToken)
-    {
-        try
-        {
-            _logger.LogInformation("Processing chat request: {Content}", chatRequest.Content);
-
-            // Get a new thread for this chat conversation
-            var chatThread = _aiAgent.GetNewThread();
-
-            // Create a prompt that includes context about the agent's knowledge
-            var prompt = $@"You are ALAN, an autonomous AI agent. A human user is chatting with you to learn about your knowledge and capabilities.
-
-User message: {chatRequest.Content}
-
-Please respond naturally and helpfully. You can share:
-- Your current goals and what you're learning
-- Your capabilities and the tools you have access to
-- Your thoughts on self-improvement and learning
-- Any insights from your memory and experiences
-
-Keep your response concise and conversational.";
-
-            var result = await _aiAgent.RunAsync(prompt, chatThread, cancellationToken: cancellationToken);
-            var responseText = result.Text ?? result.ToString();
-
-            // Send the response to the chat response queue
-            var chatResponse = new ChatResponse
-            {
-                MessageId = chatRequest.Id,
-                Response = responseText,
-                Timestamp = DateTime.UtcNow
-            };
-
-            await _chatResponseQueue.SendAsync(chatResponse, cancellationToken);
-            
-            // Delete the chat request message after successful processing
-            await _humanInputQueue.DeleteAsync(messageId, popReceipt, cancellationToken);
-
-            _logger.LogInformation("Chat response sent for request {Id}", chatRequest.Id);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error generating chat response");
-
-            // Send error response
-            var errorResponse = new ChatResponse
-            {
-                MessageId = chatRequest.Id,
-                Response = "I'm sorry, I encountered an error processing your message. Please try again.",
-                Timestamp = DateTime.UtcNow
-            };
-
-            await _chatResponseQueue.SendAsync(errorResponse, cancellationToken);
-            
-            // Delete the chat request message to prevent retry
-            await _humanInputQueue.DeleteAsync(messageId, popReceipt, cancellationToken);
         }
     }
 
@@ -253,12 +188,13 @@ Keep your response concise and conversational.";
                 });
 
             case HumanInputType.ChatWithAgent:
-                // Chat requests are handled separately in ProcessChatRequestsAsync
+                // Chat requests are handled by ChatApi via WebSockets
+                _logger.LogWarning("Chat request should not be in steering queue - redirecting to ChatApi");
                 return Task.FromResult(new HumanInputResponse
                 {
                     InputId = input.Id,
-                    Success = true,
-                    Message = "Chat request processed"
+                    Success = false,
+                    Message = "Chat requests should be sent to ChatApi WebSocket endpoint"
                 });
 
             default:

@@ -46,18 +46,13 @@ builder.Services.AddSingleton<IShortTermMemoryService>(sp =>
         storageConnectionString,
         sp.GetRequiredService<ILogger<AzureBlobShortTermMemoryService>>()));
 
-// Register queue services for human interaction
+// Register queue service for steering commands (human inputs)
+// Chat is handled by the separate ChatApi service via WebSockets
 builder.Services.AddSingleton<IMessageQueue<HumanInput>>(sp =>
     new AzureStorageQueueService<HumanInput>(
         storageConnectionString,
         "human-inputs",
         sp.GetRequiredService<ILogger<AzureStorageQueueService<HumanInput>>>()));
-
-builder.Services.AddSingleton<IMessageQueue<ChatResponse>>(sp =>
-    new AzureStorageQueueService<ChatResponse>(
-        storageConnectionString,
-        "chat-responses",
-        sp.GetRequiredService<ILogger<AzureStorageQueueService<ChatResponse>>>()));
 
 // Register consolidation service (requires AIAgent, so it's registered after)
 builder.Services.AddSingleton<IMemoryConsolidationService, MemoryConsolidationService>();

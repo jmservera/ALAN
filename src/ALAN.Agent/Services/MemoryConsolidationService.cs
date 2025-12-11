@@ -18,6 +18,7 @@ public class MemoryConsolidationService : IMemoryConsolidationService
     private readonly StateManager _stateManager;
     private readonly AIAgent _agent;
     private readonly ILogger<MemoryConsolidationService> _logger;
+    private readonly PromptService _promptService;
     private readonly List<ConsolidatedLearning> _learnings = new();
 
     public MemoryConsolidationService(
@@ -25,13 +26,15 @@ public class MemoryConsolidationService : IMemoryConsolidationService
         IShortTermMemoryService shortTermMemory,
         StateManager stateManager,
         AIAgent agent,
-        ILogger<MemoryConsolidationService> logger)
+        ILogger<MemoryConsolidationService> logger,
+        PromptService promptService)
     {
         _longTermMemory = longTermMemory;
         _shortTermMemory = shortTermMemory;
         _stateManager = stateManager;
         _agent = agent;
         _logger = logger;
+        _promptService = promptService;
     }
 
     public async Task<ConsolidatedLearning> ConsolidateMemoriesAsync(List<MemoryEntry> memories, CancellationToken cancellationToken = default)
@@ -53,28 +56,11 @@ public class MemoryConsolidationService : IMemoryConsolidationService
             m.Tags
         }).ToList();
 
-        var prompt = $@"You are analyzing {memories.Count} memory entries to extract key learnings and patterns.
-
-Memories to analyze:
-{JsonSerializer.Serialize(memorySummaries, new JsonSerializerOptions { WriteIndented = true })}
-
-Please analyze these memories and provide:
-1. A topic that these memories relate to
-2. A summary of the key learning or pattern
-3. Specific insights in JSON format
-4. A confidence score (0.0 to 1.0)
-
-Respond with ONLY a JSON object in this format:
-{{
-  ""topic"": ""the main topic"",
-  ""summary"": ""concise summary of the learning"",
-  ""insights"": {{
-    ""pattern"": ""description of any pattern found"",
-    ""actionable"": ""actionable insight if any"",
-    ""related_concepts"": [""concept1"", ""concept2""]
-  }},
-  ""confidence"": 0.8
-}}";
+        var prompt = _promptService.RenderTemplate("memory-consolidation", new
+        {
+            memoryCount = memories.Count,
+            memoriesJson = JsonSerializer.Serialize(memorySummaries, new JsonSerializerOptions { WriteIndented = true })
+        });
 
         try
         {

@@ -22,6 +22,7 @@ builder.Services.AddSingleton<StateManager>();
 builder.Services.AddSingleton<HumanInputHandler>();
 builder.Services.AddSingleton<CodeProposalService>();
 builder.Services.AddSingleton<McpConfigurationService>();
+builder.Services.AddSingleton<PromptService>();
 
 // Register memory services - Azure Storage is required
 var storageConnectionString = builder.Configuration["AzureStorage:ConnectionString"]
@@ -133,31 +134,18 @@ builder.Services.AddSingleton<AIAgent>(sp =>
         logger.LogWarning("⚠ No tools configured for the agent!");
     }
 
+    // Get project URL for agent instructions
+    var projectUrl = builder.Configuration["GITHUB_PROJECT_URL"]
+                        ?? Environment.GetEnvironmentVariable("GITHUB_PROJECT_URL")
+                        ?? "jmservera/ALAN";
+
+    // Render agent instructions from template
+    var promptService = sp.GetRequiredService<PromptService>();
+    var instructions = promptService.RenderTemplate("agent-instructions", new { projectUrl });
+
     var agent = azureClient.GetChatClient(deploymentName)
                             .CreateAIAgent(
-                                instructions: @"You are ALAN, an autonomous AI agent focused on continuous learning and self-improvement.
-
-AVAILABLE TOOLS:
-You have access to powerful MCP (Model Context Protocol) tools:
-- GitHub MCP Server: Search repositories, read code files, analyze commits, search code patterns
-- Microsoft Learn MCP Server: Access documentation, tutorials, and learning resources
-
-YOUR MISSION:
-Improve your own codebase and capabilities by:
-1. Using GitHub tools to analyze your source code at: " + (builder.Configuration["GITHUB_PROJECT_URL"]
-                                        ?? Environment.GetEnvironmentVariable("GITHUB_PROJECT_URL")
-                                        ?? "jmservera/ALAN") + @"
-2. Using Microsoft Learn to research best practices and patterns
-3. Learning from other open-source projects on GitHub
-4. Proposing improvements based on your research
-
-HOW TO USE TOOLS:
-- When you need to learn about a concept, USE Microsoft Learn tools to fetch documentation
-- When you want to see code examples, USE GitHub tools to search repositories
-- When analyzing your own code, USE GitHub tools to read your repository files
-- Always mention in your reasoning which tools you plan to use
-
-Remember: You must actively USE the tools - they won't be called automatically. When you decide to search GitHub or fetch documentation, explicitly state your intention to use these tools in your reasoning.",
+                                instructions: instructions,
                                 tools: tools,
                                 name: "ALAN-Agent");
     return agent;

@@ -28,6 +28,7 @@ public class AutonomousAgent
     private readonly IShortTermMemoryService _shortTermMemory;
     private readonly BatchLearningService _batchLearningService;
     private readonly HumanInputHandler _humanInputHandler;
+    private readonly PromptService _promptService;
     private bool _isRunning;
     private bool _isPaused;
     private string _receivedDirective = "Think about how to improve yourself.";
@@ -45,7 +46,8 @@ public class AutonomousAgent
         ILongTermMemoryService longTermMemory,
         IShortTermMemoryService shortTermMemory,
         BatchLearningService batchLearningService,
-        HumanInputHandler humanInputHandler)
+        HumanInputHandler humanInputHandler,
+        PromptService promptService)
     {
         _agent = agent;
         _thread = agent.GetNewThread();
@@ -56,6 +58,7 @@ public class AutonomousAgent
         _shortTermMemory = shortTermMemory;
         _batchLearningService = batchLearningService;
         _humanInputHandler = humanInputHandler;
+        _promptService = promptService;
         _humanInputHandler.SetAgent(this);
     }
 
@@ -285,44 +288,12 @@ public class AutonomousAgent
         }
 
         // Get AI response
-        var prompt = $@"You are an autonomous agent. Your current directive is: {_receivedDirective}
-
-You have access to the following tools:
-- GitHub MCP Server: Query repositories, read files, search code, view commits
-- Microsoft Learn MCP Server: Fetch documentation, search learning resources
-
-IMPORTANT: Your memory from previous iterations is preserved below. Build upon this knowledge - don't start from scratch.
-
-## YOUR ACCUMULATED KNOWLEDGE ({_recentMemories.Count} memories loaded):
-{BuildMemoryContext()}
-
-Previous thoughts and actions are stored in your memory and shown above.
-Think about what you should do next based on your accumulated knowledge. Use the available tools when they would be helpful.
-For example, you can search GitHub for code examples, read documentation from Microsoft Learn, or analyze repository files.
-
-When making decisions, consider:
-1. What you've learned from previous iterations (shown above)
-2. What worked well in the past (successes)
-3. What insights you've gained (learnings and reflections)
-4. How to build incrementally on existing knowledge
-
-Respond with a JSON object containing:
-- reasoning: your thought process (mention previous knowledge you're building on and if you plan to use any tools)
-- actions: the specific action(s) you will take as an array of:
-    - action: the action to perform
-    - goal: what you're trying to achieve
-    - extra (optional): any additional information
-
-Example:
-{{
-  ""reasoning"": ""Based on my previous learning about X, I should now explore Y. I'll use GitHub to search for examples."",
-  ""actions"": [{{
-    ""action"": ""Search GitHub repositories for Y implementations"",
-    ""goal"": ""Build on my understanding of X by learning about Y"",
-    ""extra"": ""This extends my knowledge from iteration #123 where I learned about X""
-  }}]
-}}
-";
+        var prompt = _promptService.RenderTemplate("agent-thinking", new
+        {
+            directive = _receivedDirective,
+            memoryCount = _recentMemories.Count,
+            memoryContext = BuildMemoryContext()
+        });
         _logger.LogTrace("Agent prompt: {Prompt}", prompt.Length > 500 ? string.Concat(prompt.AsSpan(0, 500), "...") : prompt);
         try
         {
@@ -427,32 +398,13 @@ Example:
                     {
                         _stateManager.UpdateGoal(actionPlan.Goal ?? "General exploration");
 
-                        var prompt = $@"You are an autonomous AI agent executing an action based on your previous reasoning.
-
-Current Goal: {actionPlan.Goal ?? "General exploration"}
-
-Reasoning: {singlePlan.Reasoning}
-
-Action to Execute: {actionPlan.Action}
-
-{actionPlan.Extra}
-
-You have access to the following tools:
-- GitHub MCP Server: Search repositories, read code files, view commits, search code
-- Microsoft Learn MCP Server: Fetch documentation and learning resources
-
-Please execute this action using the available tools when appropriate. For example:
-- If learning about a topic, use Microsoft Learn to fetch relevant documentation
-- If analyzing code or repositories, use GitHub to search and read files
-- If researching patterns or examples, search GitHub for relevant projects
-
-Provide:
-1. Steps you took to complete the action (mention any tools used)
-2. Any observations or insights gained
-3. Challenges encountered (if any)
-4. Next steps or recommendations
-
-Be specific about which tools you use and what you discover.";
+                        var prompt = _promptService.RenderTemplate("action-execution", new
+                        {
+                            goal = actionPlan.Goal ?? "General exploration",
+                            reasoning = singlePlan.Reasoning,
+                            action = actionPlan.Action,
+                            extra = actionPlan.Extra
+                        });
                         // Simulate action execution
                         var result = await _agent.RunAsync(prompt, _thread, cancellationToken: cancellationToken);
 

@@ -14,11 +14,18 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
 // Configure CORS for WebSocket connections
+// Read allowed origins from configuration or environment variable, fallback to ALAN.Web defaults
+var allowedOrigins = builder.Configuration["AllowedOrigins"]
+    ?? Environment.GetEnvironmentVariable("ALAN_CHATAPI_ALLOWED_ORIGINS")
+    ?? "http://localhost:5269,https://localhost:7049";
+var allowedOriginsArray = allowedOrigins
+    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins("http://localhost:5274", "https://localhost:7274")
+        policy.WithOrigins(allowedOriginsArray)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();

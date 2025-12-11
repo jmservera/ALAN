@@ -49,13 +49,27 @@ The solution uses VS Code's multi-target debugging. Configuration files:
    - If not working, ask user to start the Azurite extension (not restart VS Code)
    - DO NOT troubleshoot Azurite itself - only verify port 10000 status
 
-2. **Set environment variables**
+2. **Restore client-side libraries (first time only)**
+   ```bash
+   cd src/ALAN.Web
+   dotnet tool install -g Microsoft.Web.LibraryManager.Cli
+   libman restore
+   ```
+
+3. **Set environment variables**
 
    - Copy values from `.env` to your environment
    - Required: `AZURE_OPENAI_ENDPOINT`, managed identity credentials
-   - Local storage uses Azurite on `UseDevelopmentStorage=true`
+   - Required: `AZURE_STORAGE_CONNECTION_STRING` for Azure Blob Storage (Azurite locally)
+      - Local storage uses Azurite with the default development storage connection string `DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;QueueEndpoint=http://127.0.0.1:10001/devstoreaccount1;TableEndpoint=http://127.0.0.1:10002/devstoreaccount1;`
 
-3. **Launch both services**
+4. **Ensure Azurite is running**
+
+   - Verify port 10000 is open (DO NOT restart it)
+   - If not, ask user to start Azurite extension or
+   - If running in a headless environment, ensure Azurite is installed (`npm install -g azurite`) and started manually.
+
+5. **Launch both services**
    - Use the "ALAN (Agent + Web)" compound launch configuration
    - Or run individually:
      - "Launch Agent" - Starts `ALAN.Agent/Program.cs`

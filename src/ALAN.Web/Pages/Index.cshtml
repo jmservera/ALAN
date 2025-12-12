@@ -108,6 +108,49 @@
         const thoughts = [];
         const actions = [];
         
+        // Process state update (used by initial load and polling)
+        function processStateUpdate(state) {
+            updateAgentStatus(state);
+            
+            // Add only new thoughts
+            if (state.recentThoughts && state.recentThoughts.length > 0) {
+                state.recentThoughts.forEach(thought => {
+                    if (!seenThoughts.has(thought.id)) {
+                        addThought(thought);
+                        seenThoughts.add(thought.id);
+                    }
+                });
+            }
+            
+            // Add only new actions
+            if (state.recentActions && state.recentActions.length > 0) {
+                state.recentActions.forEach(action => {
+                    if (!seenActions.has(action.id)) {
+                        addAction(action);
+                        seenActions.add(action.id);
+                    }
+                });
+            }
+        }
+        
+        // Load initial state on page load
+        async function loadInitialState() {
+            try {
+                const response = await fetch('/api/state');
+                if (response.ok) {
+                    const state = await response.json();
+                    processStateUpdate(state);
+                    
+                    console.debug('Loaded initial state:', {
+                        thoughts: state.recentThoughts?.length || 0,
+                        actions: state.recentActions?.length || 0
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading initial state:', error);
+            }
+        }
+        
         function handleSignalRLoadError() {
             console.warn('SignalR CDN not available, using polling fallback');
             document.getElementById("connection-status").textContent = "Demo Mode (No Real-time Connection)";
@@ -123,27 +166,7 @@
                 const response = await fetch('/api/state');
                 if (response.ok) {
                     const state = await response.json();
-                    updateAgentStatus(state);
-                    
-                    // Add only new thoughts
-                    if (state.recentThoughts && state.recentThoughts.length > 0) {
-                        state.recentThoughts.forEach(thought => {
-                            if (!seenThoughts.has(thought.id)) {
-                                addThought(thought);
-                                seenThoughts.add(thought.id);
-                            }
-                        });
-                    }
-                    
-                    // Add only new actions
-                    if (state.recentActions && state.recentActions.length > 0) {
-                        state.recentActions.forEach(action => {
-                            if (!seenActions.has(action.id)) {
-                                addAction(action);
-                                seenActions.add(action.id);
-                            }
-                        });
-                    }
+                    processStateUpdate(state);
                 }
             } catch (error) {
                 console.error('Polling error:', error);
@@ -167,6 +190,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.14/signalr.min.js" 
             onerror="handleSignalRLoadError()"></script>
     <script>
+        // Load initial state when page loads
+        // Check if DOM is already loaded (interactive or complete) or still loading
+        if (document.readyState === 'loading') {
+            // DOM still loading, wait for event
+            document.addEventListener('DOMContentLoaded', loadInitialState);
+        } else {
+            // DOM already loaded (interactive or complete), call immediately
+            loadInitialState();
+        }
+        
         // Initialize SignalR if library loaded successfully
         if (typeof signalR !== 'undefined') {
             connection = new signalR.HubConnectionBuilder()
@@ -179,11 +212,17 @@
         });
 
         connection.on("ReceiveThought", function (thought) {
-            addThought(thought);
+            if (!seenThoughts.has(thought.id)) {
+                addThought(thought);
+                seenThoughts.add(thought.id);
+            }
         });
 
         connection.on("ReceiveAction", function (action) {
-            addAction(action);
+            if (!seenActions.has(action.id)) {
+                addAction(action);
+                seenActions.add(action.id);
+            }
         });
 
         connection.on("ReceiveActionUpdate", function (action) {

@@ -20,7 +20,7 @@ public class AutonomousAgentTests
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
         var mockConsolidation = new Mock<IMemoryConsolidationService>();
-        var mockPromptService = new Mock<PromptService>(Mock.Of<ILogger<PromptService>>(), default!);
+        var mockPromptService = new Mock<IPromptService>();
         
         // Create real service instances with mocked dependencies
         var stateManager = new StateManager(mockShortTermMemory.Object, mockLongTermMemory.Object);

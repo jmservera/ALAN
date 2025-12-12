@@ -13,7 +13,7 @@ Successfully integrated AG-UI (Agent Gateway User Interface) protocol support in
 #### Code Changes
 **File**: `src/ALAN.ChatApi/Program.cs`
 - Added using directive: `using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;`
-- Mapped AG-UI endpoint: `app.MapAGUI("/agui", aguiAgent);`
+- Mapped AG-UI endpoint: `app.MapAGUI("/api/agui", aguiAgent);`
 - Endpoint accessible at: `http://localhost:5041/api/agui`
 
 ### 2. Frontend (ALAN.Web)
@@ -62,7 +62,7 @@ Successfully integrated AG-UI (Agent Gateway User Interface) protocol support in
 ## Technical Details
 
 ### AG-UI Endpoint
-- **Path**: `/agui`
+- **Path**: `/api/agui`
 - **Protocol**: AG-UI standard protocol
 - **Method**: POST with JSON body
 - **Headers**: `Content-Type: application/json`, `Accept: text/event-stream`
@@ -76,7 +76,7 @@ Successfully integrated AG-UI (Agent Gateway User Interface) protocol support in
 The vanilla JavaScript client follows this flow:
 1. Initialize with session ID (stored in localStorage)
 2. Generate unique thread ID per conversation
-3. Send messages via POST to `/agui` endpoint
+3. Send messages via POST to `/api/agui` endpoint
 4. Handle responses and update UI
 5. Support for error handling and fallback
 

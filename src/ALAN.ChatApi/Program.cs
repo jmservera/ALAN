@@ -123,9 +123,9 @@ app.UseAuthorization();
 app.MapControllers();
 
 // Map AG-UI endpoint
-// This exposes the AIAgent via the AG-UI protocol at /agui endpoint
+// This exposes the AIAgent via the AG-UI protocol at /api/agui endpoint
 // The AG-UI protocol enables streaming chat, tool calls, and state management
 var aguiAgent = app.Services.GetRequiredService<AIAgent>();
-app.MapAGUI("/agui", aguiAgent);
+app.MapAGUI("/api/agui", aguiAgent);
 
 app.Run();

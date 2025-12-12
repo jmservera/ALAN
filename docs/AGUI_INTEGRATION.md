@@ -27,7 +27,7 @@ using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 // ... agent setup ...
 
 // Map AG-UI endpoint
-app.MapAGUI("/agui", aguiAgent);
+app.MapAGUI("/api/agui", aguiAgent);
 ```
 
 This creates an endpoint at `http://localhost:5041/api/agui` that implements the AG-UI protocol.

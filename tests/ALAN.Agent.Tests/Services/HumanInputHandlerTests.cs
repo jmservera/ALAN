@@ -50,7 +50,7 @@ public class HumanInputHandlerTests
             .Returns(Task.CompletedTask);
 
         // Act - using null agent as we're testing queue interaction only
-        var result = await handler.ProcessPendingInputsAsync(null!);
+        await handler.ProcessPendingInputsAsync(null!);
 
         // Assert
         mockQueue.Verify(

@@ -1,5 +1,6 @@
 using ALAN.ChatApi.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -44,8 +45,11 @@ public class ChatWebSocketController : ControllerBase
         var sessionId = Guid.NewGuid().ToString();
         _logger.LogInformation("WebSocket connection established for session {SessionId}", sessionId);
 
-        var buffer = new byte[1024 * 4];
+        const int bufferSize = 1024 * 4; // 4KB buffer
         const int maxMessageSize = 1024 * 100; // 100KB max message size
+        
+        // Rent buffer from ArrayPool to reduce GC pressure
+        var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
 
         try
         {
@@ -58,7 +62,7 @@ public class ChatWebSocketController : ControllerBase
                 do
                 {
                     result = await webSocket.ReceiveAsync(
-                        new ArraySegment<byte>(buffer),
+                        new ArraySegment<byte>(buffer, 0, bufferSize),
                         cancellationToken);
 
                     if (result.MessageType == WebSocketMessageType.Close)
@@ -84,10 +88,16 @@ public class ChatWebSocketController : ControllerBase
                             Content = "Message size exceeds maximum allowed size"
                         };
                         await SendWebSocketMessageAsync(webSocket, errorResponse, cancellationToken);
-                        continue;
+                        break; // Exit inner loop to restart outer loop
                     }
                 }
                 while (!result.EndOfMessage && webSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested);
+
+                // Skip processing if message exceeded size limit
+                if (messageBuffer.Length > maxMessageSize)
+                {
+                    continue; // Skip to next message
+                }
 
                 messageBuffer.Seek(0, SeekOrigin.Begin);
                 var message = Encoding.UTF8.GetString(messageBuffer.ToArray());
@@ -171,6 +181,9 @@ public class ChatWebSocketController : ControllerBase
         }
         finally
         {
+            // Return buffer to pool to reduce GC pressure
+            ArrayPool<byte>.Shared.Return(buffer);
+            
             await _chatService.ClearHistoryAsync(sessionId, CancellationToken.None);
             _logger.LogInformation("WebSocket connection closed for session {SessionId}", sessionId);
         }

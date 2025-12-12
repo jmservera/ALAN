@@ -101,13 +101,21 @@ public class ChatServiceTests
         {
             await _service.ProcessChatAsync(session1, "Message 1", _ => Task.CompletedTask, CancellationToken.None);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // Expected to fail due to mocked agent
+            _mockLogger.Object.LogDebug("Expected exception during test: {Message}", ex.Message);
+        }
 
         try
         {
             await _service.ProcessChatAsync(session2, "Message 2", _ => Task.CompletedTask, CancellationToken.None);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            // Expected to fail due to mocked agent
+            _mockLogger.Object.LogDebug("Expected exception during test: {Message}", ex.Message);
+        }
 
         // Verify that GetNewThread was called twice (once per session)
         _mockAgent.Verify(a => a.GetNewThread(), Times.Exactly(2));
@@ -128,7 +136,7 @@ public class ChatServiceTests
     public async Task ProcessChatAsync_RespectsCancellationToken()
     {
         // Arrange
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         cts.Cancel();
 
         // Act & Assert

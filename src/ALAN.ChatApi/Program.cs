@@ -102,9 +102,11 @@ app.UseHttpsRedirection();
 app.UseCors();
 
 // Enable WebSocket support
+// Read keep-alive interval from configuration (in seconds), default to 120 seconds (2 minutes)
+var keepAliveIntervalSeconds = builder.Configuration.GetValue<int?>("WebSockets:KeepAliveIntervalSeconds") ?? 120;
 var webSocketOptions = new WebSocketOptions
 {
-    KeepAliveInterval = TimeSpan.FromMinutes(2)
+    KeepAliveInterval = TimeSpan.FromSeconds(keepAliveIntervalSeconds)
 };
 app.UseWebSockets(webSocketOptions);
 

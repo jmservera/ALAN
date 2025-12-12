@@ -9,13 +9,14 @@ namespace ALAN.Shared.Services.Queue;
 /// Azure Storage Queue implementation of IMessageQueue.
 /// Uses Azure Queue Storage for reliable message queuing.
 /// </summary>
-public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
+public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T : class
 {
     private readonly QueueClient _queueClient;
     private readonly ILogger<AzureStorageQueueService<T>> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private bool _initialized;
+    private bool _disposed;
 
     public AzureStorageQueueService(
         string connectionString,
@@ -160,6 +161,15 @@ public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
         await EnsureInitializedAsync(cancellationToken);
         await _queueClient.ClearMessagesAsync(cancellationToken);
         _logger.LogInformation("Queue cleared");
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _initLock?.Dispose();
+        _disposed = true;
     }
 
     internal bool IsInitialized => _initialized;

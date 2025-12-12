@@ -84,10 +84,16 @@ public class ChatWebSocketController : ControllerBase
                             Content = "Message size exceeds maximum allowed size"
                         };
                         await SendWebSocketMessageAsync(webSocket, errorResponse, cancellationToken);
-                        continue;
+                        break; // Exit inner loop to restart outer loop
                     }
                 }
                 while (!result.EndOfMessage && webSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested);
+
+                // Skip processing if message exceeded size limit
+                if (messageBuffer.Length > maxMessageSize)
+                {
+                    continue; // Skip to next message
+                }
 
                 messageBuffer.Seek(0, SeekOrigin.Begin);
                 var message = Encoding.UTF8.GetString(messageBuffer.ToArray());

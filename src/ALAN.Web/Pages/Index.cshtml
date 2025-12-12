@@ -141,7 +141,7 @@
                     const state = await response.json();
                     processStateUpdate(state);
                     
-                    console.log('Loaded initial state:', {
+                    console.debug('Loaded initial state:', {
                         thoughts: state.recentThoughts?.length || 0,
                         actions: state.recentActions?.length || 0
                     });
@@ -191,10 +191,12 @@
             onerror="handleSignalRLoadError()"></script>
     <script>
         // Load initial state when page loads
+        // Check if DOM is already loaded (interactive or complete) or still loading
         if (document.readyState === 'loading') {
+            // DOM still loading, wait for event
             document.addEventListener('DOMContentLoaded', loadInitialState);
         } else {
-            // Document already loaded, call immediately
+            // DOM already loaded (interactive or complete), call immediately
             loadInitialState();
         }
         

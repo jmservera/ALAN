@@ -9,31 +9,21 @@
     <div class="row">
         <div class="col-12 text-center mb-4">
             <h1 class="display-4">Chat with ALAN</h1>
-            <p class="lead">Interact with the LLM and its acquired knowledge</p>
+            <p class="lead">Interact with the LLM via AG-UI protocol</p>
         </div>
     </div>
 
     <div class="row">
-        <!-- Chat with Agent Panel -->
+        <!-- Chat with Agent Panel - Now using AG-UI React Component -->
         <div class="col-md-7 mb-4">
             <div class="card h-100">
                 <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">💬 Chat with Agent</h5>
-                    <small>Ask questions and interact with ALAN's knowledge</small>
+                    <h5 class="mb-0">💬 Chat with Agent (AG-UI)</h5>
+                    <small>Standard AG-UI protocol interface with React components</small>
                 </div>
                 <div class="card-body d-flex flex-column" style="height: 600px;">
-                    <div id="chat-messages" class="flex-grow-1 mb-3 border rounded p-3" style="overflow-y: auto; background-color: #f8f9fa;">
-                        <div class="text-muted text-center">
-                            <p>Start a conversation with ALAN...</p>
-                            <small>The agent will use its full context and acquired knowledge to respond.</small>
-                        </div>
-                    </div>
-                    <div class="input-group">
-                        <input type="text" id="chat-input" class="form-control" placeholder="Type your message..." />
-                        <button class="btn btn-primary" type="button" id="send-chat-btn">
-                            <i class="bi bi-send"></i> Send
-                        </button>
-                    </div>
+                    <!-- React AG-UI Chat Component will mount here -->
+                    <div id="chat-root" data-chatapi-url="@Model.ChatApiBaseUrl"></div>
                 </div>
             </div>
         </div>
@@ -82,90 +72,13 @@
 </div>
 
 @section Scripts {
+    <!-- AG-UI Chat Component -->
+    <script src="~/js/agui-chat.js"></script>
+    
     <script>
-        const chatApiBaseUrl = '@Model.ChatApiBaseUrl';
-        let sessionId = localStorage.getItem('alanChatSessionId');
-        if (!sessionId) {
-            sessionId = crypto.randomUUID();
-            localStorage.setItem('alanChatSessionId', sessionId);
-        }
-
-        const chatMessages = document.getElementById('chat-messages');
-        const chatInput = document.getElementById('chat-input');
-        const sendChatBtn = document.getElementById('send-chat-btn');
-        const commandStatus = document.getElementById('command-status');
-
-        // Chat functionality
-        function addMessage(content, role) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `mb-3 ${role === 'human' ? 'text-end' : ''}`;
-            
-            const badge = role === 'human' 
-                ? '<span class="badge bg-primary">You</span>' 
-                : '<span class="badge bg-success">ALAN</span>';
-            
-            const alignment = role === 'human' ? 'ms-auto' : '';
-            const bgColor = role === 'human' ? 'bg-primary text-white' : 'bg-white border';
-            
-            messageDiv.innerHTML = `
-                <div class="d-inline-block ${alignment}" style="max-width: 80%;">
-                    ${badge}
-                    <div class="${bgColor} rounded p-2 mt-1">
-                        <small class="text-muted d-block mb-1">${new Date().toLocaleTimeString()}</small>
-                        ${escapeHtml(content)}
-                    </div>
-                </div>
-            `;
-            
-            chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        async function sendChatMessage() {
-            const message = chatInput.value.trim();
-            if (!message) return;
-
-            // Add user message to chat
-            addMessage(message, 'human');
-            chatInput.value = '';
-            sendChatBtn.disabled = true;
-
-            try {
-                const response = await fetch(`${chatApiBaseUrl}/chat`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message, sessionId: sessionId })
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.messageId) {
-                        sessionId = data.messageId;
-                        localStorage.setItem('alanChatSessionId', sessionId);
-                    }
-                    addMessage(data.response ?? data, 'agent');
-                } else {
-                    addMessage('Sorry, I encountered an error processing your message.', 'agent');
-                }
-            } catch (error) {
-                console.error('Chat error:', error);
-                addMessage('Sorry, I could not connect to the agent.', 'agent');
-            } finally {
-                sendChatBtn.disabled = false;
-                chatInput.focus();
-            }
-        }
-
-        sendChatBtn.addEventListener('click', sendChatMessage);
-        chatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                sendChatMessage();
-            }
-        });
-
-        // Steering commands functionality
+        // Steering commands functionality (unchanged)
         function showCommandStatus(message, type = 'info') {
+            const commandStatus = document.getElementById('command-status');
             const alertClass = {
                 'success': 'alert-success',
                 'error': 'alert-danger',
@@ -212,14 +125,5 @@
         document.getElementById('resume-btn').addEventListener('click', () => sendCommand('resume'));
         document.getElementById('batch-learning-btn').addEventListener('click', () => sendCommand('batch-learning'));
         document.getElementById('memory-consolidation-btn').addEventListener('click', () => sendCommand('memory-consolidation'));
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        // Initial focus
-        chatInput.focus();
     </script>
 }

@@ -1,6 +1,8 @@
 using ALAN.ChatApi.Services;
 using ALAN.Shared.Services.Memory;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Hosting;
+using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using Microsoft.Extensions.AI;
 using Azure.AI.OpenAI;
 using Azure.Identity;
@@ -119,5 +121,11 @@ app.UseWebSockets(webSocketOptions);
 
 app.UseAuthorization();
 app.MapControllers();
+
+// Map AG-UI endpoint
+// This exposes the AIAgent via the AG-UI protocol at /agui endpoint
+// The AG-UI protocol enables streaming chat, tool calls, and state management
+var aguiAgent = app.Services.GetRequiredService<AIAgent>();
+app.MapAGUI("/agui", aguiAgent);
 
 app.Run();

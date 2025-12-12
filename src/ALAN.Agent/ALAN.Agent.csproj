@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.17.1" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.22.2" />
+    <PackageReference Include="Handlebars.Net" Version="2.1.6" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.0.0-preview.251204.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Azure.AI.OpenAI" Version="2.7.0-beta.2" />
@@ -24,6 +25,9 @@
 </ItemGroup>
 <ItemGroup>
     <None Update="mcp-config.yaml">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Prompts\*.hbs">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
 </ItemGroup>

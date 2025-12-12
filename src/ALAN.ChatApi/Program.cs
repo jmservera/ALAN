@@ -13,6 +13,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
+// Register PromptService
+builder.Services.AddSingleton<IPromptService, PromptService>();
+
 // Configure CORS for WebSocket connections
 // Read allowed origins from configuration or environment variable, fallback to ALAN.Web defaults
 var allowedOrigins = builder.Configuration["AllowedOrigins"]
@@ -80,9 +83,13 @@ builder.Services.AddSingleton<AIAgent>(sp =>
         azureClient = new AzureOpenAIClient(new Uri(endpoint), new DefaultAzureCredential());
     }
 
+    // Render agent instructions from template
+    var promptService = sp.GetRequiredService<IPromptService>();
+    var instructions = promptService.RenderTemplate("chat-agent-instructions", new { });
+
     var agent = azureClient.GetChatClient(deploymentName)
                           .CreateAIAgent(
-                              instructions: "You are ALAN, an autonomous AI agent focused on continuous learning and self-improvement. Respond naturally and conversationally to user questions.",
+                              instructions: instructions,
                               name: "ALAN-Chat");
     return agent;
 });

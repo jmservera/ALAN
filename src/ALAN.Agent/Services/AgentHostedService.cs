@@ -19,6 +19,7 @@ public class AgentHostedService : BackgroundService
     private readonly BatchLearningService _batchLearningService;
     private readonly HumanInputHandler _humanInputHandler;
     private readonly IMemoryConsolidationService _memoryConsolidation;
+    private readonly IPromptService _promptService;
     private AutonomousAgent? _agent;
 
     public AgentHostedService(
@@ -31,7 +32,8 @@ public class AgentHostedService : BackgroundService
         IShortTermMemoryService shortTermMemory,
         BatchLearningService batchLearningService,
         HumanInputHandler humanInputHandler,
-        IMemoryConsolidationService memoryConsolidation)
+        IMemoryConsolidationService memoryConsolidation,
+        IPromptService promptService)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -43,6 +45,7 @@ public class AgentHostedService : BackgroundService
         _batchLearningService = batchLearningService;
         _humanInputHandler = humanInputHandler;
         _memoryConsolidation = memoryConsolidation;
+        _promptService = promptService;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -57,7 +60,8 @@ public class AgentHostedService : BackgroundService
             _longTermMemory,
             _shortTermMemory,
             _batchLearningService,
-            _humanInputHandler);
+            _humanInputHandler,
+            _promptService);
 
         // Start memory consolidation background task
         var consolidationTask = RunMemoryConsolidationAsync(stoppingToken);

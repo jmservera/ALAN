@@ -12,18 +12,21 @@ public class ChatService : IDisposable
     private readonly AIAgent _agent;
     private readonly ILogger<ChatService> _logger;
     private readonly ILongTermMemoryService _longTermMemory;
-    private readonly Dictionary<string, AgentThread> _activeThreads = new();
+    private readonly IPromptService _promptService;
+    private readonly Dictionary<string, AgentThread> _activeThreads = [];
     private readonly SemaphoreSlim _threadLock = new(1, 1);
     private bool _disposed;
 
     public ChatService(
         AIAgent agent,
         ILogger<ChatService> logger,
-        ILongTermMemoryService longTermMemory)
+        ILongTermMemoryService longTermMemory,
+        IPromptService promptService)
     {
         _agent = agent;
         _logger = logger;
         _longTermMemory = longTermMemory; // Reserved for future use - retrieving conversation context from long-term memory
+        _promptService = promptService;
     }
 
     /// <summary>
@@ -43,17 +46,7 @@ public class ChatService : IDisposable
             var thread = await GetOrCreateThreadAsync(sessionId, cancellationToken);
 
             // Create a prompt that includes context about the agent's knowledge
-            var prompt = $@"You are ALAN, an autonomous AI agent. A human user is chatting with you to learn about your knowledge and capabilities.
-
-User message: {message}
-
-Please respond naturally and helpfully. You can share:
-- Your current goals and what you're learning
-- Your capabilities and the tools you have access to
-- Your thoughts on self-improvement and learning
-- Any insights from your memory and experiences
-
-Keep your response concise and conversational.";
+            var prompt = _promptService.RenderTemplate("chat-conversation", new { message });
 
             // Run with streaming
             var responseBuilder = new StringBuilder();

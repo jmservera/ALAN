@@ -4,11 +4,44 @@ using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
+using System.IO;
 
 namespace ALAN.Agent.Tests.Services;
 
 public class MemoryConsolidationServiceTests
 {
+    private static PromptService CreatePromptService()
+    {
+        var promptsDir = Path.Combine(Path.GetTempPath(), $"alan-tests-prompts-{Guid.NewGuid()}");
+        Directory.CreateDirectory(promptsDir);
+        
+        // Create the memory-consolidation template file that's actually used by the service
+        var templatePath = Path.Combine(promptsDir, "memory-consolidation.hbs");
+        File.WriteAllText(templatePath, @"You are analyzing {{memoryCount}} memory entries to extract key learnings and patterns.
+
+Memories to analyze:
+{{memoriesJson}}
+
+Please analyze these memories and provide:
+1. A topic that these memories relate to
+2. A summary of the key learning or pattern
+3. Specific insights in JSON format
+4. A confidence score (0.0 to 1.0)
+
+Respond with ONLY a JSON object in this format:
+{
+  ""topic"": ""the main topic"",
+  ""summary"": ""concise summary of the learning"",
+  ""insights"": {
+    ""pattern"": ""description of any pattern found"",
+    ""actionable"": ""actionable insight if any"",
+    ""related_concepts"": [""concept1"", ""concept2""]
+  },
+  ""confidence"": 0.8
+}");
+        
+        return new PromptService(Mock.Of<ILogger<PromptService>>(), promptsDir);
+    }
     [Fact]
     public async Task ExtractLearningsAsync_UsesShortTermMemoryForRecentMemories()
     {
@@ -31,7 +64,8 @@ public class MemoryConsolidationServiceTests
             .Setup(m => m.GetRecentMemoriesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(memories);
 
-        var svc = new MemoryConsolidationService(mockLongTerm.Object, mockShortTerm.Object, stateManager, agent: null!, logger);
+        var promptService = CreatePromptService();
+        var svc = new MemoryConsolidationService(mockLongTerm.Object, mockShortTerm.Object, stateManager, agent: null!, logger, promptService);
 
         // Act
         var learnings = await svc.ExtractLearningsAsync(DateTime.UtcNow.AddHours(-1));
@@ -64,7 +98,8 @@ public class MemoryConsolidationServiceTests
         };
         stateManager.AddThought(thought);
 
-        var svc = new MemoryConsolidationService(mockLongTerm.Object, mockShortTerm.Object, stateManager, agent: null!, logger);
+        var promptService = CreatePromptService();
+        var svc = new MemoryConsolidationService(mockLongTerm.Object, mockShortTerm.Object, stateManager, agent: null!, logger, promptService);
 
         // Act
         await svc.ConsolidateShortTermMemoryAsync();
@@ -112,7 +147,8 @@ public class MemoryConsolidationServiceTests
             .Setup(m => m.GetKeysAsync("action:*", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<string>());
 
-        var svc = new MemoryConsolidationService(mockLongTerm.Object, mockShortTerm.Object, stateManager, agent: null!, logger);
+        var promptService = CreatePromptService();
+        var svc = new MemoryConsolidationService(mockLongTerm.Object, mockShortTerm.Object, stateManager, agent: null!, logger, promptService);
 
         // Act
         await svc.ConsolidateShortTermMemoryAsync();
@@ -131,7 +167,8 @@ public class MemoryConsolidationServiceTests
         var mockShortTerm = new Mock<IShortTermMemoryService>();
         var logger = Mock.Of<ILogger<MemoryConsolidationService>>();
         var stateManager = new StateManager(mockShortTerm.Object, mockLongTerm.Object);
-        var svc = new MemoryConsolidationService(mockLongTerm.Object, mockShortTerm.Object, stateManager, agent: null!, logger);
+        var promptService = CreatePromptService();
+        var svc = new MemoryConsolidationService(mockLongTerm.Object, mockShortTerm.Object, stateManager, agent: null!, logger, promptService);
 
         var jsonResponse = @"{ ""TOPIC"": ""TestTopic"", ""SUMMARY"": ""Some summary"", ""INSIGHTS"": { ""pattern"": ""X"" }, ""CONFIDENCE"": 0.9 }";
         var sourceMemories = new List<MemoryEntry> { new() { Id = "m1" } };

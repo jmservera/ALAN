@@ -108,33 +108,38 @@
         const thoughts = [];
         const actions = [];
         
+        // Process state update (used by initial load and polling)
+        function processStateUpdate(state) {
+            updateAgentStatus(state);
+            
+            // Add only new thoughts
+            if (state.recentThoughts && state.recentThoughts.length > 0) {
+                state.recentThoughts.forEach(thought => {
+                    if (!seenThoughts.has(thought.id)) {
+                        addThought(thought);
+                        seenThoughts.add(thought.id);
+                    }
+                });
+            }
+            
+            // Add only new actions
+            if (state.recentActions && state.recentActions.length > 0) {
+                state.recentActions.forEach(action => {
+                    if (!seenActions.has(action.id)) {
+                        addAction(action);
+                        seenActions.add(action.id);
+                    }
+                });
+            }
+        }
+        
         // Load initial state on page load
         async function loadInitialState() {
             try {
                 const response = await fetch('/api/state');
                 if (response.ok) {
                     const state = await response.json();
-                    updateAgentStatus(state);
-                    
-                    // Load historical thoughts
-                    if (state.recentThoughts && state.recentThoughts.length > 0) {
-                        state.recentThoughts.forEach(thought => {
-                            if (!seenThoughts.has(thought.id)) {
-                                addThought(thought);
-                                seenThoughts.add(thought.id);
-                            }
-                        });
-                    }
-                    
-                    // Load historical actions
-                    if (state.recentActions && state.recentActions.length > 0) {
-                        state.recentActions.forEach(action => {
-                            if (!seenActions.has(action.id)) {
-                                addAction(action);
-                                seenActions.add(action.id);
-                            }
-                        });
-                    }
+                    processStateUpdate(state);
                     
                     console.log('Loaded initial state:', {
                         thoughts: state.recentThoughts?.length || 0,
@@ -161,27 +166,7 @@
                 const response = await fetch('/api/state');
                 if (response.ok) {
                     const state = await response.json();
-                    updateAgentStatus(state);
-                    
-                    // Add only new thoughts
-                    if (state.recentThoughts && state.recentThoughts.length > 0) {
-                        state.recentThoughts.forEach(thought => {
-                            if (!seenThoughts.has(thought.id)) {
-                                addThought(thought);
-                                seenThoughts.add(thought.id);
-                            }
-                        });
-                    }
-                    
-                    // Add only new actions
-                    if (state.recentActions && state.recentActions.length > 0) {
-                        state.recentActions.forEach(action => {
-                            if (!seenActions.has(action.id)) {
-                                addAction(action);
-                                seenActions.add(action.id);
-                            }
-                        });
-                    }
+                    processStateUpdate(state);
                 }
             } catch (error) {
                 console.error('Polling error:', error);
@@ -206,9 +191,12 @@
             onerror="handleSignalRLoadError()"></script>
     <script>
         // Load initial state when page loads
-        document.addEventListener('DOMContentLoaded', function() {
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', loadInitialState);
+        } else {
+            // Document already loaded, call immediately
             loadInitialState();
-        });
+        }
         
         // Initialize SignalR if library loaded successfully
         if (typeof signalR !== 'undefined') {

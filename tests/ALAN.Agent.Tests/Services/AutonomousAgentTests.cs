@@ -850,7 +850,7 @@ public class AutonomousAgentTests
             stateManager,
             Mock.Of<IMessageQueue<HumanInput>>(),
             mockConsolidation.Object);
-        var mockPromptService = new Mock<PromptService>(Mock.Of<ILogger<PromptService>>(), null);
+        var mockPromptService = new Mock<IPromptService>();
 
         return new AutonomousAgent(
             mockAIAgent.Object,

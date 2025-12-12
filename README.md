@@ -14,6 +14,7 @@ ALAN is a Semantic Kernel-based autonomous agent solution that runs continuously
 - **Azure-Ready**: Deployable to Azure App Service with included deployment templates
 - **Real-time Updates**: Uses SignalR for live updates from the agent to the web interface
 - **Batch Learning**: Periodic consolidation of memories into actionable insights
+- **Resilient Architecture**: Automatic retry with exponential backoff for all Azure service calls
 
 ## Architecture
 
@@ -42,6 +43,16 @@ Control the agent through REST API endpoints:
 - Query current state
 
 See [Human Steering API Documentation](docs/HUMAN_STEERING_API.md) for details.
+
+### Resiliency
+
+ALAN implements comprehensive resiliency patterns:
+- **Automatic Retry**: Exponential backoff for transient failures
+- **Throttling Management**: Handles rate limits gracefully
+- **Circuit Breaker**: Prevents cascading failures
+- **Detailed Logging**: Track retry attempts and service health
+
+See [Resiliency Documentation](docs/RESILIENCY.md) for details.
 
 ## Prerequisites
 

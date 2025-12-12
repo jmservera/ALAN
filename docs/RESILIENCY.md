@@ -87,6 +87,15 @@ Resiliency has been added to the following services:
 
 Each service initializes a resilience pipeline in its constructor and wraps all external API calls with retry logic.
 
+### Azure OpenAI Built-in Resiliency
+
+**Note:** Azure OpenAI SDK (`Azure.AI.OpenAI` v2.7.0) and Microsoft.Extensions.AI already include built-in retry logic and error handling. The `CreateOpenAIRetryPipeline` methods are provided for:
+- **Custom scenarios** where additional retry control is needed
+- **Consistency** with other service retry patterns
+- **Future extensions** to other AI providers
+
+For standard Azure OpenAI usage in ALAN, the SDK's default behavior is sufficient and no additional wrapping is required.
+
 ## Logging
 
 All retry attempts are logged at `Warning` level with detailed information:

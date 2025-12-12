@@ -30,6 +30,7 @@ ALAN (Autonomous Learning Agent Network) is a Semantic Kernel-based autonomous a
 ### Prerequisites
 
 - .NET 8.0 SDK
+- Node.js (LTS recommended) for ALAN.Web frontend assets
 - Azure OpenAI endpoint (typically uses managed identity)
 - VS Code with Azurite extension installed
 - Environment variables from `.env` file
@@ -54,6 +55,13 @@ The solution uses VS Code's multi-target debugging. Configuration files:
    cd src/ALAN.Web
    dotnet tool install -g Microsoft.Web.LibraryManager.Cli
    libman restore
+   ```
+
+   **Build Node-based frontend assets** (CopilotKit/AG-UI):
+   ```bash
+   cd src/ALAN.Web
+   npm install
+   npm run build
    ```
 
 3. **Set environment variables**

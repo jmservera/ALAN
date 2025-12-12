@@ -41,7 +41,8 @@
       "name": "Launch Agent + Web + API",
       "configurations": ["C#: Launch ALAN.Agent", "C#: Launch ALAN.Web", "C#: Launch ALAN.ChatApi"],
       "stopAll": true,
-      "preLaunchTask": "build-all"
+      "preLaunchTask": "build-all",
+      "postDebugTask": "stop-frontend-watch"
     }
   ]
 }

@@ -2,25 +2,54 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build-agent",
-      "command": "dotnet",
-      "type": "process",
+      "label": "npm-install",
+      "type": "shell",
+      "command": "npm",
       "args": [
-        "build",
-        "${workspaceFolder}/src/ALAN.Agent/ALAN.Agent.csproj",
-        "/property:GenerateFullPaths=true",
-        "/consoleloggerparameters:NoSummary;ForceNoAlign"
+        "install"
       ],
-      "problemMatcher": "$msCompile",
-      "group": "build"
+      "options": {
+        "cwd": "${workspaceFolder}/src/ALAN.Web"
+      }
     },
     {
-      "label": "build-web",
+      "label": "build-node",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "dev"
+      ],
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}/src/ALAN.Web"
+      },
+      "dependsOn": "npm-install",
+      "problemMatcher": {
+        "owner": "webpack",
+        "fileLocation": "absolute",
+        "background": {
+          "beginsPattern": "^> webpack --mode .* --watch",
+          "endsPattern": "^webpack .* compiled (successfully|with warnings)"
+        },
+        "pattern": {
+          "regexp": "^ERROR in\\s+([^ ]+)\\s+(\\d+:\\d+)",
+          "file": 1,
+          "location": 2,
+          "message": 0,
+          "severity": "error"
+        }
+      },
+      "group": "build"
+    },
+    
+    {
+      "label": "build-solution",
       "command": "dotnet",
       "type": "process",
       "args": [
         "build",
-        "${workspaceFolder}/src/ALAN.Web/ALAN.Web.csproj",
+        "${workspaceFolder}/ALAN.sln",
         "/property:GenerateFullPaths=true",
         "/consoleloggerparameters:NoSummary;ForceNoAlign"
       ],
@@ -29,12 +58,19 @@
     },
     {
       "label": "build-all",
-      "dependsOn": ["build-agent", "build-web"],
+      "dependsOn": ["build-node", "build-solution"],
+      "dependsOrder": "parallel",
       "problemMatcher": "$msCompile",
       "group": {
-        "kind": "build",
-        "isDefault": true
+      "kind": "build",
+      "isDefault": true
       }
+    },
+    {
+      "label": "stop-frontend-watch",
+      "type": "shell",
+      "command": "pkill -f \"webpack --mode development --watch\"",
+      "problemMatcher": []
     }
   ]
 }

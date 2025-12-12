@@ -243,4 +243,130 @@ public class ResiliencePolicyTests
                 It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
             Times.Once);
     }
+
+    [Fact]
+    public async Task CreateStorageRetryPipeline_PropagatesCancellation()
+    {
+        // Arrange
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object);
+        var cts = new CancellationTokenSource();
+        int attemptCount = 0;
+
+        // Act & Assert
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await pipeline.ExecuteAsync(async ct =>
+            {
+                attemptCount++;
+                cts.Cancel(); // Cancel after first attempt
+                ct.ThrowIfCancellationRequested();
+                return await Task.FromResult(1);
+            }, cts.Token);
+        });
+
+        // Should only attempt once, no retries on cancellation
+        Assert.Equal(1, attemptCount);
+    }
+
+    [Fact]
+    public async Task CreateStorageRetryPipeline_StopsRetryingOnCancellation()
+    {
+        // Arrange
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object);
+        var cts = new CancellationTokenSource();
+        int attemptCount = 0;
+
+        // Act & Assert
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await pipeline.ExecuteAsync(async ct =>
+            {
+                attemptCount++;
+                if (attemptCount == 1)
+                {
+                    // First attempt fails with retryable error
+                    throw new RequestFailedException(503, "Service Unavailable");
+                }
+                // Cancel before second retry
+                cts.Cancel();
+                ct.ThrowIfCancellationRequested();
+                return await Task.FromResult(1);
+            }, cts.Token);
+        });
+
+        // Should attempt twice max (initial + one retry before cancellation)
+        Assert.True(attemptCount <= 2, $"Expected <= 2 attempts but got {attemptCount}");
+    }
+
+    [Fact]
+    public async Task CreateOpenAIRetryPipeline_PropagatesCancellation()
+    {
+        // Arrange
+        var pipeline = ResiliencePolicy.CreateOpenAIRetryPipeline<string>(_mockLogger.Object);
+        var cts = new CancellationTokenSource();
+        int attemptCount = 0;
+
+        // Act & Assert
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await pipeline.ExecuteAsync(async ct =>
+            {
+                attemptCount++;
+                cts.Cancel(); // Cancel after first attempt
+                ct.ThrowIfCancellationRequested();
+                return await Task.FromResult("result");
+            }, cts.Token);
+        });
+
+        // Should only attempt once, no retries on cancellation
+        Assert.Equal(1, attemptCount);
+    }
+
+    [Fact]
+    public async Task CreateStorageRetryPipeline_NonGeneric_PropagatesCancellation()
+    {
+        // Arrange
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline(_mockLogger.Object);
+        var cts = new CancellationTokenSource();
+        int attemptCount = 0;
+
+        // Act & Assert
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await pipeline.ExecuteAsync(async ct =>
+            {
+                attemptCount++;
+                cts.Cancel();
+                ct.ThrowIfCancellationRequested();
+                await Task.CompletedTask;
+            }, cts.Token);
+        });
+
+        // Should only attempt once, no retries on cancellation
+        Assert.Equal(1, attemptCount);
+    }
+
+    [Fact]
+    public async Task CreateOpenAIRetryPipeline_NonGeneric_PropagatesCancellation()
+    {
+        // Arrange
+        var pipeline = ResiliencePolicy.CreateOpenAIRetryPipeline(_mockLogger.Object);
+        var cts = new CancellationTokenSource();
+        int attemptCount = 0;
+
+        // Act & Assert
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await pipeline.ExecuteAsync(async ct =>
+            {
+                attemptCount++;
+                cts.Cancel();
+                ct.ThrowIfCancellationRequested();
+                await Task.CompletedTask;
+            }, cts.Token);
+        });
+
+        // Should only attempt once, no retries on cancellation
+        Assert.Equal(1, attemptCount);
+    }
 }

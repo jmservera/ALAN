@@ -22,7 +22,6 @@ The system uses [Polly](https://www.pollydocs.org/) (version 8.5.0) to implement
 - `504` - Gateway Timeout
 - `408` - Request Timeout
 - `TimeoutException`
-- `OperationCanceledException`
 
 **Usage Example:**
 ```csharp
@@ -47,7 +46,6 @@ var response = await pipeline.ExecuteAsync(async ct =>
 - `504` - Gateway Timeout
 - `500` - Internal Server Error (may be transient)
 - `TimeoutException`
-- `OperationCanceledException`
 
 **Usage Example:**
 ```csharp

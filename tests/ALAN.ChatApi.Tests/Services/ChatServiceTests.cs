@@ -12,6 +12,7 @@ public class ChatServiceTests
     private readonly Mock<AIAgent> _mockAgent;
     private readonly Mock<ILogger<ChatService>> _mockLogger;
     private readonly Mock<ILongTermMemoryService> _mockMemory;
+    private readonly Mock<IPromptService> _mockPromptService;
     private readonly ChatService _service;
 
     public ChatServiceTests()
@@ -19,11 +20,17 @@ public class ChatServiceTests
         _mockAgent = new Mock<AIAgent>();
         _mockLogger = new Mock<ILogger<ChatService>>();
         _mockMemory = new Mock<ILongTermMemoryService>();
+        _mockPromptService = new Mock<IPromptService>();
+        
+        // Setup default prompt service behavior
+        _mockPromptService.Setup(p => p.RenderTemplate(It.IsAny<string>(), It.IsAny<object>()))
+            .Returns((string template, object data) => $"Rendered: {template}");
         
         _service = new ChatService(
             _mockAgent.Object,
             _mockLogger.Object,
-            _mockMemory.Object);
+            _mockMemory.Object,
+            _mockPromptService.Object);
     }
 
     [Fact]

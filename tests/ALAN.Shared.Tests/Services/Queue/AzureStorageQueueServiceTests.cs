@@ -17,7 +17,7 @@ public class AzureStorageQueueServiceTests
         _mockLogger = new Mock<ILogger<AzureStorageQueueService<TestMessage>>>();
     }
 
-    [Fact(Skip = "Requires Azurite running - integration test")]
+    [Fact]
     public async Task SendAsync_SerializesAndSendsMessage()
     {
         // Arrange
@@ -43,7 +43,7 @@ public class AzureStorageQueueServiceTests
         await service.DeleteAsync(messages[0].MessageId, messages[0].PopReceipt);
     }
 
-    [Fact(Skip = "Requires Azurite running - integration test")]
+    [Fact]
     public async Task ReceiveAsync_DeserializesMessages()
     {
         // Arrange
@@ -73,7 +73,7 @@ public class AzureStorageQueueServiceTests
         }
     }
 
-    [Fact(Skip = "Requires Azurite running - integration test")]
+    [Fact]
     public async Task DeleteAsync_RemovesMessage()
     {
         // Arrange
@@ -98,7 +98,7 @@ public class AzureStorageQueueServiceTests
         Assert.DoesNotContain(remainingMessages, m => m.Content.Id == "test-delete");
     }
 
-    [Fact(Skip = "Requires Azurite running - integration test")]
+    [Fact]
     public async Task GetApproximateCountAsync_ReturnsCount()
     {
         // Arrange
@@ -142,7 +142,7 @@ public class AzureStorageQueueServiceTests
         Assert.NotNull(service);
     }
 
-    [Fact(Skip = "Requires Azurite running - integration test")]
+    [Fact]
     public async Task SendAsync_CreatesQueueIfMissing()
     {
         // Arrange: use a unique queue name to avoid collisions

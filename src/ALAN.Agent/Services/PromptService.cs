@@ -7,7 +7,7 @@ namespace ALAN.Agent.Services;
 /// Service for loading and rendering Handlebars prompt templates.
 /// Provides centralized prompt management with template-based rendering.
 /// </summary>
-public class PromptService
+public class PromptService : IPromptService
 {
     private readonly ILogger<PromptService> _logger;
     private readonly string _promptsDirectory;

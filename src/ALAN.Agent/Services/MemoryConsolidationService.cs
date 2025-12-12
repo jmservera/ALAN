@@ -18,8 +18,8 @@ public class MemoryConsolidationService : IMemoryConsolidationService
     private readonly StateManager _stateManager;
     private readonly AIAgent _agent;
     private readonly ILogger<MemoryConsolidationService> _logger;
-    private readonly PromptService _promptService;
-    private readonly List<ConsolidatedLearning> _learnings = new();
+    private readonly IPromptService _promptService;
+    private readonly List<ConsolidatedLearning> _learnings = [];
 
     public MemoryConsolidationService(
         ILongTermMemoryService longTermMemory,
@@ -27,7 +27,7 @@ public class MemoryConsolidationService : IMemoryConsolidationService
         StateManager stateManager,
         AIAgent agent,
         ILogger<MemoryConsolidationService> logger,
-        PromptService promptService)
+        IPromptService promptService)
     {
         _longTermMemory = longTermMemory;
         _shortTermMemory = shortTermMemory;

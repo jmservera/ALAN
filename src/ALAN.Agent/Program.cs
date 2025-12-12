@@ -25,7 +25,7 @@ builder.Services.AddSingleton<StateManager>();
 builder.Services.AddSingleton<HumanInputHandler>();
 builder.Services.AddSingleton<CodeProposalService>();
 builder.Services.AddSingleton<McpConfigurationService>();
-builder.Services.AddSingleton<PromptService>();
+builder.Services.AddSingleton<IPromptService, PromptService>();
 
 // Register memory services - Azure Storage is required
 var storageConnectionString = builder.Configuration["AzureStorage:ConnectionString"]
@@ -151,7 +151,7 @@ builder.Services.AddSingleton<AIAgent>(sp =>
                         ?? "jmservera/ALAN";
 
     // Render agent instructions from template
-    var promptService = sp.GetRequiredService<PromptService>();
+    var promptService = sp.GetRequiredService<IPromptService>();
     var instructions = promptService.RenderTemplate("agent-instructions", new { projectUrl });
 
     var agent = azureClient.GetChatClient(deploymentName)

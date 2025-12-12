@@ -28,6 +28,10 @@ public class PromptServiceTests : IDisposable
 
         // Assert
         Assert.True(Directory.Exists(nonExistentDir));
+        
+        // Verify the service can list templates (even if empty)
+        var templates = service.GetAvailableTemplates();
+        Assert.NotNull(templates);
 
         // Cleanup
         Directory.Delete(nonExistentDir);

@@ -28,7 +28,7 @@ public class AutonomousAgent
     private readonly IShortTermMemoryService _shortTermMemory;
     private readonly BatchLearningService _batchLearningService;
     private readonly HumanInputHandler _humanInputHandler;
-    private readonly PromptService _promptService;
+    private readonly IPromptService _promptService;
     private bool _isRunning;
     private bool _isPaused;
     private string _receivedDirective = "Think about how to improve yourself.";
@@ -47,7 +47,7 @@ public class AutonomousAgent
         IShortTermMemoryService shortTermMemory,
         BatchLearningService batchLearningService,
         HumanInputHandler humanInputHandler,
-        PromptService promptService)
+        IPromptService promptService)
     {
         _agent = agent;
         _thread = agent.GetNewThread();

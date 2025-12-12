@@ -19,7 +19,7 @@ public class AgentHostedService : BackgroundService
     private readonly BatchLearningService _batchLearningService;
     private readonly HumanInputHandler _humanInputHandler;
     private readonly IMemoryConsolidationService _memoryConsolidation;
-    private readonly PromptService _promptService;
+    private readonly IPromptService _promptService;
     private AutonomousAgent? _agent;
 
     public AgentHostedService(
@@ -33,7 +33,7 @@ public class AgentHostedService : BackgroundService
         BatchLearningService batchLearningService,
         HumanInputHandler humanInputHandler,
         IMemoryConsolidationService memoryConsolidation,
-        PromptService promptService)
+        IPromptService promptService)
     {
         _logger = logger;
         _loggerFactory = loggerFactory;

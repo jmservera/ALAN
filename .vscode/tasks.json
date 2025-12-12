@@ -37,7 +37,7 @@
           "file": 1,
           "location": 2,
           "message": 0,
-          "severity": "error"
+          "severity": 2
         }
       },
       "group": "build"

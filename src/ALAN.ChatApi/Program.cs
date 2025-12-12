@@ -89,10 +89,14 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     var promptService = sp.GetRequiredService<IPromptService>();
     var instructions = promptService.RenderTemplate("chat-agent-instructions", new { });
 
+    var agentName = builder.Configuration["ChatApi:AgentName"]
+        ?? Environment.GetEnvironmentVariable("ALAN_AGENT_NAME")
+        ?? "alan-agent";
+
     var agent = azureClient.GetChatClient(deploymentName)
                           .CreateAIAgent(
                               instructions: instructions,
-                              name: "ALAN-Chat");
+                              name: agentName);
     return agent;
 });
 
@@ -110,14 +114,14 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors();
 
-// Enable WebSocket support
-// Read keep-alive interval from configuration (in seconds), default to 120 seconds (2 minutes)
-var keepAliveIntervalSeconds = builder.Configuration.GetValue<int?>("WebSockets:KeepAliveIntervalSeconds") ?? 120;
-var webSocketOptions = new WebSocketOptions
-{
-    KeepAliveInterval = TimeSpan.FromSeconds(keepAliveIntervalSeconds)
-};
-app.UseWebSockets(webSocketOptions);
+// // Enable WebSocket support
+// // Read keep-alive interval from configuration (in seconds), default to 120 seconds (2 minutes)
+// var keepAliveIntervalSeconds = builder.Configuration.GetValue<int?>("WebSockets:KeepAliveIntervalSeconds") ?? 120;
+// var webSocketOptions = new WebSocketOptions
+// {
+//     KeepAliveInterval = TimeSpan.FromSeconds(keepAliveIntervalSeconds)
+// };
+// app.UseWebSockets(webSocketOptions);
 
 app.UseAuthorization();
 app.MapControllers();

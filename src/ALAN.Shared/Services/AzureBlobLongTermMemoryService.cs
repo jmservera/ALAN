@@ -1,7 +1,9 @@
 using ALAN.Shared.Models;
+using ALAN.Shared.Services.Resilience;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Logging;
+using Polly;
 using System.Text.Json;
 
 namespace ALAN.Shared.Services.Memory;
@@ -14,6 +16,7 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
 {
     private readonly BlobContainerClient _containerClient;
     private readonly ILogger<AzureBlobLongTermMemoryService> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
     private const string ContainerName = "agent-memories";
     private bool _isInitialized = false;
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -26,6 +29,7 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
         ILogger<AzureBlobLongTermMemoryService> logger)
     {
         _logger = logger;
+        _resiliencePipeline = ResiliencePolicy.CreateStorageRetryPipeline(logger);
 
         try
         {
@@ -47,7 +51,9 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
 
         try
         {
-            await _containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+                await _containerClient.CreateIfNotExistsAsync(cancellationToken: ct),
+                cancellationToken);
             _isInitialized = true;
             _logger.LogInformation("Azure Blob container '{ContainerName}' is ready", ContainerName);
             return true;
@@ -95,10 +101,14 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
             {
                 HttpHeaders = new BlobHttpHeaders { ContentType = "application/json" }
             };
-            await blobClient.UploadAsync(stream, uploadOptions, cancellationToken);
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+                await blobClient.UploadAsync(stream, uploadOptions, ct),
+                cancellationToken);
 
             // Set metadata after upload
-            await blobClient.SetMetadataAsync(metadata, cancellationToken: cancellationToken);
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+                await blobClient.SetMetadataAsync(metadata, cancellationToken: ct),
+                cancellationToken);
 
             _logger.LogDebug("Stored memory {Id} of type {Type} to blob {BlobName}", memory.Id, memory.Type, blobName);
         }
@@ -136,9 +146,15 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
                 var blobName = $"{date:yyyy/MM/dd}/{id}.json";
                 var blobClient = _containerClient.GetBlobClient(blobName);
 
-                if (await blobClient.ExistsAsync(cancellationToken))
+                var exists = await _resiliencePipeline.ExecuteAsync(async ct =>
+                    await blobClient.ExistsAsync(ct),
+                    cancellationToken);
+                
+                if (exists)
                 {
-                    var response = await blobClient.DownloadContentAsync(cancellationToken);
+                    var response = await _resiliencePipeline.ExecuteAsync(async ct =>
+                        await blobClient.DownloadContentAsync(ct),
+                        cancellationToken);
                     var json = response.Value.Content.ToString();
                     var memory = JsonSerializer.Deserialize<MemoryEntry>(json, JsonOptions);
 
@@ -303,9 +319,15 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
                 var blobName = $"{date:yyyy/MM/dd}/{id}.json";
                 var blobClient = _containerClient.GetBlobClient(blobName);
 
-                if (await blobClient.ExistsAsync(cancellationToken))
+                var exists = await _resiliencePipeline.ExecuteAsync(async ct =>
+                    await blobClient.ExistsAsync(ct),
+                    cancellationToken);
+                
+                if (exists)
                 {
-                    await blobClient.DeleteAsync(cancellationToken: cancellationToken);
+                    await _resiliencePipeline.ExecuteAsync(async ct =>
+                        await blobClient.DeleteAsync(cancellationToken: ct),
+                        cancellationToken);
                     _logger.LogInformation("Deleted memory {Id}", id);
                     return true;
                 }

@@ -1,8 +1,10 @@
 using ALAN.Shared.Models;
 using ALAN.Shared.Services.Memory;
+using ALAN.Shared.Services.Resilience;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
+using Polly;
 using System.Text.Json;
 
 namespace ALAN.Agent.Services;
@@ -29,6 +31,7 @@ public class AutonomousAgent
     private readonly BatchLearningService _batchLearningService;
     private readonly HumanInputHandler _humanInputHandler;
     private readonly IPromptService _promptService;
+    private readonly ResiliencePipeline _resiliencePipeline;
     private bool _isRunning;
     private bool _isPaused;
     private string _receivedDirective = "Think about how to improve yourself.";
@@ -59,6 +62,7 @@ public class AutonomousAgent
         _batchLearningService = batchLearningService;
         _humanInputHandler = humanInputHandler;
         _promptService = promptService;
+        _resiliencePipeline = ResiliencePolicy.CreateOpenAIRetryPipeline(logger);
         _humanInputHandler.SetAgent(this);
     }
 
@@ -303,7 +307,9 @@ public class AutonomousAgent
         _logger.LogTrace("Agent prompt: {Prompt}", prompt.Length > 500 ? string.Concat(prompt.AsSpan(0, 500), "...") : prompt);
         try
         {
-            var result = await _agent.RunAsync(prompt, _thread, cancellationToken: cancellationToken);
+            var result = await _resiliencePipeline.ExecuteAsync(async ct =>
+                await _agent.RunAsync(prompt, _thread, cancellationToken: ct),
+                cancellationToken);
             var response = result.Text ?? result.ToString();
 
             // Extract tool call information (minimal metadata)
@@ -412,7 +418,9 @@ public class AutonomousAgent
                             extra = actionPlan.Extra
                         });
                         // Simulate action execution
-                        var result = await _agent.RunAsync(prompt, _thread, cancellationToken: cancellationToken);
+                        var result = await _resiliencePipeline.ExecuteAsync(async ct =>
+                            await _agent.RunAsync(prompt, _thread, cancellationToken: ct),
+                            cancellationToken);
 
                         // Extract tool calls from action execution
                         var toolCalls = ExtractToolCalls(result);

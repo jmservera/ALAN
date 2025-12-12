@@ -49,7 +49,6 @@ See [Human Steering API Documentation](docs/HUMAN_STEERING_API.md) for details.
 ALAN implements comprehensive resiliency patterns:
 - **Automatic Retry**: Exponential backoff for transient failures
 - **Throttling Management**: Handles rate limits gracefully
-- **Circuit Breaker**: Prevents cascading failures
 - **Detailed Logging**: Track retry attempts and service health
 
 See [Resiliency Documentation](docs/RESILIENCY.md) for details.

@@ -7,7 +7,7 @@ namespace ALAN.Shared.Services.Resilience;
 
 /// <summary>
 /// Provides resilience policies for Azure service operations.
-/// Implements retry with exponential backoff and circuit breaker patterns.
+/// Implements retry with exponential backoff.
 /// </summary>
 public static class ResiliencePolicy
 {
@@ -30,14 +30,14 @@ public static class ResiliencePolicy
                         ex.Status == 503 ||  // Service Unavailable
                         ex.Status == 504 ||  // Gateway Timeout
                         ex.Status == 408)    // Request Timeout
-                    .HandleInner<TimeoutException>()
-                    .HandleInner<OperationCanceledException>(),
+                    .HandleInner<TimeoutException>(),
                 OnRetry = args =>
                 {
+                    var maxAttempts = 3; // MaxRetryAttempts from configuration above
                     logger.LogWarning(
                         "Azure Storage operation failed. Attempt {AttemptNumber} of {MaxAttempts}. Waiting {Delay}ms before retry. Error: {Error}",
                         args.AttemptNumber,
-                        3,
+                        maxAttempts + 1, // Total attempts = retries + initial attempt
                         args.RetryDelay.TotalMilliseconds,
                         args.Outcome.Exception?.Message ?? "Unknown");
                     return ValueTask.CompletedTask;
@@ -65,14 +65,14 @@ public static class ResiliencePolicy
                         ex.Status == 503 ||  // Service Unavailable
                         ex.Status == 504 ||  // Gateway Timeout
                         ex.Status == 408)    // Request Timeout
-                    .HandleInner<TimeoutException>()
-                    .HandleInner<OperationCanceledException>(),
+                    .HandleInner<TimeoutException>(),
                 OnRetry = args =>
                 {
+                    var maxAttempts = 3; // MaxRetryAttempts from configuration above
                     logger.LogWarning(
                         "Azure Storage operation failed. Attempt {AttemptNumber} of {MaxAttempts}. Waiting {Delay}ms before retry. Error: {Error}",
                         args.AttemptNumber,
-                        3,
+                        maxAttempts + 1, // Total attempts = retries + initial attempt
                         args.RetryDelay.TotalMilliseconds,
                         args.Outcome.Exception?.Message ?? "Unknown");
                     return ValueTask.CompletedTask;
@@ -100,14 +100,14 @@ public static class ResiliencePolicy
                         ex.Status == 503 ||  // Service temporarily unavailable
                         ex.Status == 504 ||  // Gateway timeout
                         ex.Status == 500)    // Internal server error (may be transient)
-                    .HandleInner<TimeoutException>()
-                    .HandleInner<OperationCanceledException>(),
+                    .HandleInner<TimeoutException>(),
                 OnRetry = args =>
                 {
+                    var maxAttempts = 5; // MaxRetryAttempts from configuration above
                     logger.LogWarning(
                         "Azure OpenAI operation failed. Attempt {AttemptNumber} of {MaxAttempts}. Waiting {Delay}ms before retry. Error: {Error}",
                         args.AttemptNumber,
-                        5,
+                        maxAttempts + 1, // Total attempts = retries + initial attempt
                         args.RetryDelay.TotalMilliseconds,
                         args.Outcome.Exception?.Message ?? "Unknown");
                     return ValueTask.CompletedTask;
@@ -135,14 +135,14 @@ public static class ResiliencePolicy
                         ex.Status == 503 ||  // Service temporarily unavailable
                         ex.Status == 504 ||  // Gateway timeout
                         ex.Status == 500)    // Internal server error (may be transient)
-                    .HandleInner<TimeoutException>()
-                    .HandleInner<OperationCanceledException>(),
+                    .HandleInner<TimeoutException>(),
                 OnRetry = args =>
                 {
+                    var maxAttempts = 5; // MaxRetryAttempts from configuration above
                     logger.LogWarning(
                         "Azure OpenAI operation failed. Attempt {AttemptNumber} of {MaxAttempts}. Waiting {Delay}ms before retry. Error: {Error}",
                         args.AttemptNumber,
-                        5,
+                        maxAttempts + 1, // Total attempts = retries + initial attempt
                         args.RetryDelay.TotalMilliseconds,
                         args.Outcome.Exception?.Message ?? "Unknown");
                     return ValueTask.CompletedTask;

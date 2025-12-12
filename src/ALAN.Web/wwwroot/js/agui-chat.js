@@ -61,7 +61,7 @@ class AGUIChatApp {
                 flex: 1;
                 overflow-y: auto;
                 padding: 1rem;
-                backgroundColor: #f8f9fa;
+                background-color: #f8f9fa;
                 border: 1px solid #dee2e6;
                 border-radius: 0.25rem;
                 margin-bottom: 1rem;

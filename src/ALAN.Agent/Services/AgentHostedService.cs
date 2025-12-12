@@ -88,29 +88,40 @@ public class AgentHostedService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
+            bool flowControl = await ExecuteMemoryConsolidationOnceAsync(stoppingToken);
+            if (!flowControl)
             {
-                _logger.LogInformation("Running memory consolidation...");
-                await _memoryConsolidation.ConsolidateShortTermMemoryAsync(stoppingToken);
-                _logger.LogInformation("Memory consolidation completed");
-
-                // Run consolidation every 6 hours (well before 8-hour short-term TTL expires)
-                await Task.Delay(TimeSpan.FromHours(6), stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogInformation("Memory consolidation cancelled");
                 break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during memory consolidation");
-                // Wait a bit before retrying
-                await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken);
             }
         }
 
         _logger.LogInformation("Memory consolidation task stopped");
+    }
+
+    public async Task<bool> ExecuteMemoryConsolidationOnceAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            _logger.LogInformation("Running memory consolidation...");
+            await _memoryConsolidation.ConsolidateShortTermMemoryAsync(stoppingToken);
+            _logger.LogInformation("Memory consolidation completed");
+
+            // Run consolidation every 6 hours (well before 8-hour short-term TTL expires)
+            await Task.Delay(TimeSpan.FromHours(6), stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("Memory consolidation cancelled");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during memory consolidation");
+            // Wait a bit before retrying
+            await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken);
+        }
+
+        return true;
     }
 
     public override Task StopAsync(CancellationToken cancellationToken)

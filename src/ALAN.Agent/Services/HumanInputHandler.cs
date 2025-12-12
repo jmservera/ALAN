@@ -1,4 +1,6 @@
 using ALAN.Shared.Models;
+using ALAN.Shared.Services.Queue;
+using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
@@ -6,21 +8,28 @@ namespace ALAN.Agent.Services;
 
 /// <summary>
 /// Manages human input commands for steering the agent.
-/// Provides a queue-based system for processing human directives.
+/// Uses Azure Storage Queue for reliable message processing.
+/// Chat functionality is handled by the separate ChatApi service.
 /// </summary>
 public class HumanInputHandler
 {
     private readonly ConcurrentQueue<HumanInput> _inputQueue = new();
     private readonly ILogger<HumanInputHandler> _logger;
     private readonly StateManager _stateManager;
+    private readonly IMessageQueue<HumanInput> _humanInputQueue;
+    private readonly IMemoryConsolidationService _memoryConsolidation;
     private AutonomousAgent? _agent;
 
     public HumanInputHandler(
         ILogger<HumanInputHandler> logger,
-        StateManager stateManager)
+        StateManager stateManager,
+        IMessageQueue<HumanInput> humanInputQueue,
+        IMemoryConsolidationService memoryConsolidation)
     {
         _logger = logger;
         _stateManager = stateManager;
+        _humanInputQueue = humanInputQueue;
+        _memoryConsolidation = memoryConsolidation;
     }
 
     public void SetAgent(AutonomousAgent agent)
@@ -46,6 +55,10 @@ public class HumanInputHandler
     {
         var responses = new List<HumanInputResponse>();
 
+        // Process messages from the queue
+        await ProcessQueuedInputsAsync(agent, cancellationToken);
+
+        // Process inputs from the in-memory queue (legacy support)
         while (_inputQueue.TryDequeue(out var input))
         {
             try
@@ -69,7 +82,66 @@ public class HumanInputHandler
         return responses;
     }
 
-    private Task<HumanInputResponse> ProcessInputAsync(HumanInput input, AutonomousAgent agent, CancellationToken cancellationToken)
+    private async Task ProcessQueuedInputsAsync(AutonomousAgent agent, CancellationToken cancellationToken)
+    {
+        const int maxRetryCount = 5; // Maximum number of retries before considering message as dead-letter
+        
+        try
+        {
+            // Receive messages from the human input queue (steering commands only)
+            var messages = await _humanInputQueue.ReceiveAsync(
+                maxMessages: 10,
+                visibilityTimeout: TimeSpan.FromSeconds(60), // Increased from 30 to 60 for longer operations
+                cancellationToken: cancellationToken);
+
+            foreach (var msg in messages)
+            {
+                try
+                {
+                    var input = msg.Content;
+                    _logger.LogInformation("Processing queued input: {Type} (DequeueCount: {Count})", 
+                        input.Type, msg.DequeueCount);
+
+                    // Check if message has been retried too many times
+                    if (msg.DequeueCount > maxRetryCount)
+                    {
+                        _logger.LogError(
+                            "Message {MessageId} exceeded max retry count ({MaxRetry}). Moving to dead-letter. Type: {Type}, Content: {Content}",
+                            msg.MessageId, maxRetryCount, input.Type, input.Content);
+                        
+                        // Delete message to prevent infinite retry
+                        await _humanInputQueue.DeleteAsync(msg.MessageId, msg.PopReceipt, cancellationToken);
+                        continue;
+                    }
+
+                    // Skip chat requests - they are handled by ChatApi
+                    if (input.Type == HumanInputType.ChatWithAgent)
+                    {
+                        _logger.LogWarning("Chat request in steering queue - deleting (should go to ChatApi)");
+                        await _humanInputQueue.DeleteAsync(msg.MessageId, msg.PopReceipt, cancellationToken);
+                        continue;
+                    }
+
+                    // Process steering commands
+                    await ProcessInputAsync(input, agent, cancellationToken);
+                    
+                    // Delete message after successful processing
+                    await _humanInputQueue.DeleteAsync(msg.MessageId, msg.PopReceipt, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error processing queued input {MessageId}", msg.MessageId);
+                    // Message will become visible again for retry
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error receiving messages from human input queue");
+        }
+    }
+
+    private async Task<HumanInputResponse> ProcessInputAsync(HumanInput input, AutonomousAgent agent, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Processing human input: {Type}", input.Type);
 
@@ -77,44 +149,52 @@ public class HumanInputHandler
         {
             case HumanInputType.UpdatePrompt:
                 agent.UpdatePrompt(input.Content);
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Prompt updated successfully"
-                });
+                };
 
             case HumanInputType.PauseAgent:
                 agent.Pause();
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Agent paused"
-                });
+                };
 
             case HumanInputType.ResumeAgent:
                 agent.Resume();
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Agent resumed"
-                });
+                };
 
             case HumanInputType.TriggerBatchLearning:
-                // This would trigger the batch learning process
-                _logger.LogInformation("Batch learning trigger requested by human");
-                return Task.FromResult(new HumanInputResponse
+                await agent.PauseAndRunBatchLearningAsync(cancellationToken);
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
-                    Message = "Batch learning will be triggered in next iteration"
-                });
+                    Message = "Batch learning triggered"
+                };
+
+            case HumanInputType.TriggerMemoryConsolidation:
+                await _memoryConsolidation.ConsolidateShortTermMemoryAsync(cancellationToken);
+                return new HumanInputResponse
+                {
+                    InputId = input.Id,
+                    Success = true,
+                    Message = "Memory consolidation triggered"
+                };
 
             case HumanInputType.QueryState:
                 var state = _stateManager.GetCurrentState();
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
@@ -123,25 +203,35 @@ public class HumanInputHandler
                     {
                         ["state"] = state
                     }
-                });
+                };
 
             case HumanInputType.AddGoal:
                 _stateManager.UpdateGoal(input.Content);
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = $"Goal updated to: {input.Content}"
-                });
+                };
+
+            case HumanInputType.ChatWithAgent:
+                // Chat requests are handled by ChatApi via WebSockets
+                _logger.LogWarning("Chat request should not be in steering queue - redirecting to ChatApi");
+                return new HumanInputResponse
+                {
+                    InputId = input.Id,
+                    Success = false,
+                    Message = "Chat requests should be sent to ChatApi WebSocket endpoint"
+                };
 
             default:
                 _logger.LogWarning("Unknown input type: {Type}", input.Type);
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = false,
                     Message = $"Unknown input type: {input.Type}"
-                });
+                };
         }
     }
 

@@ -1,6 +1,8 @@
 using ALAN.Agent.Services;
 using ALAN.Agent.Services.MCP;
 using ALAN.Shared.Services.Memory;
+using ALAN.Shared.Services.Queue;
+using ALAN.Shared.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,6 +12,7 @@ using Azure.AI.OpenAI;
 using Azure;
 using OpenAI;
 using Azure.Identity;
+using ChatResponse = ALAN.Shared.Models.ChatResponse;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -43,6 +46,14 @@ builder.Services.AddSingleton<IShortTermMemoryService>(sp =>
     new AzureBlobShortTermMemoryService(
         storageConnectionString,
         sp.GetRequiredService<ILogger<AzureBlobShortTermMemoryService>>()));
+
+// Register queue service for steering commands (human inputs)
+// Chat is handled by the separate ChatApi service via WebSockets
+builder.Services.AddSingleton<IMessageQueue<HumanInput>>(sp =>
+    new AzureStorageQueueService<HumanInput>(
+        storageConnectionString,
+        "human-inputs",
+        sp.GetRequiredService<ILogger<AzureStorageQueueService<HumanInput>>>()));
 
 // Register consolidation service (requires AIAgent, so it's registered after)
 builder.Services.AddSingleton<IMemoryConsolidationService, MemoryConsolidationService>();

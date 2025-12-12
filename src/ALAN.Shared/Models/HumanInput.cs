@@ -20,12 +20,14 @@ public enum HumanInputType
     PauseAgent,
     ResumeAgent,
     TriggerBatchLearning,
+    TriggerMemoryConsolidation,
     ApproveCodeChange,
     RejectCodeChange,
     AddGoal,
     RemoveGoal,
     QueryState,
-    ResetMemory
+    ResetMemory,
+    ChatWithAgent
 }
 
 /// <summary>

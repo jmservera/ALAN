@@ -4,6 +4,7 @@ using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Agents.AI;
 using Moq;
+using ALAN.Shared.Services.Queue;
 
 namespace ALAN.Agent.Tests.Services;
 
@@ -19,7 +20,7 @@ public class AutonomousAgentTests
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
         var mockConsolidation = new Mock<IMemoryConsolidationService>();
-        var mockPromptService = new Mock<PromptService>(Mock.Of<ILogger<PromptService>>(), null);
+        var mockPromptService = new Mock<PromptService>(Mock.Of<ILogger<PromptService>>(), default!);
         
         // Create real service instances with mocked dependencies
         var stateManager = new StateManager(mockShortTermMemory.Object, mockLongTermMemory.Object);
@@ -30,7 +31,9 @@ public class AutonomousAgentTests
             Mock.Of<ILogger<BatchLearningService>>());
         var humanInput = new HumanInputHandler(
             Mock.Of<ILogger<HumanInputHandler>>(),
-            stateManager);
+            stateManager,
+            Mock.Of<IMessageQueue<HumanInput>>(),
+            mockConsolidation.Object);
 
         _agent = new AutonomousAgent(
             mockAIAgent.Object,
@@ -844,7 +847,9 @@ public class AutonomousAgentTests
             Mock.Of<ILogger<BatchLearningService>>());
         var humanInput = new HumanInputHandler(
             Mock.Of<ILogger<HumanInputHandler>>(),
-            stateManager);
+            stateManager,
+            Mock.Of<IMessageQueue<HumanInput>>(),
+            mockConsolidation.Object);
         var mockPromptService = new Mock<PromptService>(Mock.Of<ILogger<PromptService>>(), null);
 
         return new AutonomousAgent(

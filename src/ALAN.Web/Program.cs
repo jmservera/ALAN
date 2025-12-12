@@ -1,7 +1,10 @@
 using ALAN.Shared.Services.Memory;
+using ALAN.Shared.Services.Queue;
+using ALAN.Shared.Models;
 using ALAN.Web.Hubs;
 using ALAN.Web.Services;
 using System.Text.Json.Serialization;
+using ChatResponse = ALAN.Shared.Models.ChatResponse;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -37,6 +40,14 @@ builder.Services.AddSingleton<IShortTermMemoryService>(sp =>
     new AzureBlobShortTermMemoryService(
         storageConnectionString,
         sp.GetRequiredService<ILogger<AzureBlobShortTermMemoryService>>()));
+
+// Register queue service for steering commands (human inputs)
+// Chat is handled by the separate ChatApi service via WebSockets
+builder.Services.AddSingleton<IMessageQueue<HumanInput>>(sp =>
+    new AzureStorageQueueService<HumanInput>(
+        storageConnectionString,
+        "human-inputs",
+        sp.GetRequiredService<ILogger<AzureStorageQueueService<HumanInput>>>()));
 
 builder.Services.AddSingleton<AgentStateService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<AgentStateService>());

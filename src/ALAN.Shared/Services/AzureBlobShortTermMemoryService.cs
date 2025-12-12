@@ -1,3 +1,4 @@
+using ALAN.Shared.Models;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Logging;
@@ -15,6 +16,10 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
     private readonly ILogger<AzureBlobShortTermMemoryService> _logger;
     private const string ContainerName = "agent-cache";
     private bool _isInitialized = false;
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public AzureBlobShortTermMemoryService(
         string connectionString,
@@ -67,12 +72,12 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
 
         var cacheEntry = new CacheEntry
         {
-            Value = JsonSerializer.Serialize(value),
+            Value = JsonSerializer.Serialize(value, JsonOptions),
             CreatedAt = DateTime.UtcNow,
             ExpiresAt = expiration.HasValue ? DateTime.UtcNow.Add(expiration.Value) : null
         };
 
-        var json = JsonSerializer.Serialize(cacheEntry);
+        var json = JsonSerializer.Serialize(cacheEntry, JsonOptions);
         using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
 
         var metadata = new Dictionary<string, string>
@@ -125,7 +130,7 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
 
             var response = await blobClient.DownloadContentAsync(cancellationToken);
             var json = response.Value.Content.ToString();
-            var cacheEntry = JsonSerializer.Deserialize<CacheEntry>(json);
+            var cacheEntry = JsonSerializer.Deserialize<CacheEntry>(json, JsonOptions);
 
             if (cacheEntry == null)
             {
@@ -140,7 +145,7 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
                 return default;
             }
 
-            var value = JsonSerializer.Deserialize<T>(cacheEntry.Value);
+            var value = JsonSerializer.Deserialize<T>(cacheEntry.Value, JsonOptions);
             return value;
         }
         catch (JsonException ex)
@@ -235,6 +240,44 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
         }
 
         return keys;
+    }
+
+    public async Task<List<MemoryEntry>> GetRecentMemoriesAsync(int count = 100, CancellationToken cancellationToken = default)
+    {
+        if (!await EnsureInitializedAsync(cancellationToken))
+        {
+            _logger.LogWarning("Azure Blob Storage not initialized. Cannot retrieve recent memories");
+            return [];
+        }
+
+        var keys = await GetKeysAsync("memory:*", cancellationToken);
+        if (keys.Count == 0)
+        {
+            return [];
+        }
+
+        var memories = new List<MemoryEntry>();
+
+        foreach (var key in keys)
+        {
+            try
+            {
+                var memory = await GetAsync<MemoryEntry>(key, cancellationToken);
+                if (memory != null)
+                {
+                    memories.Add(memory);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to deserialize memory from short-term key {Key}", key);
+            }
+        }
+
+        return memories
+            .OrderByDescending(m => m.Timestamp)
+            .Take(count)
+            .ToList();
     }
 
     /// <summary>

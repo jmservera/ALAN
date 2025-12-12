@@ -12,6 +12,12 @@ public class ChatWebSocketController : ControllerBase
 {
     private readonly ChatService _chatService;
     private readonly ILogger<ChatWebSocketController> _logger;
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        AllowTrailingCommas = true,
+        ReadCommentHandling = JsonCommentHandling.Skip
+    };
 
     public ChatWebSocketController(ChatService chatService, ILogger<ChatWebSocketController> logger)
     {
@@ -89,7 +95,7 @@ public class ChatWebSocketController : ControllerBase
 
                 try
                 {
-                    var request = JsonSerializer.Deserialize<ChatWebSocketMessage>(message);
+                    var request = JsonSerializer.Deserialize<ChatWebSocketMessage>(message, JsonOptions);
                     
                     if (request?.Action == "chat" && !string.IsNullOrWhiteSpace(request.Message))
                     {

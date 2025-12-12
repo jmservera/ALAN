@@ -20,6 +20,7 @@ public enum HumanInputType
     PauseAgent,
     ResumeAgent,
     TriggerBatchLearning,
+    TriggerMemoryConsolidation,
     ApproveCodeChange,
     RejectCodeChange,
     AddGoal,

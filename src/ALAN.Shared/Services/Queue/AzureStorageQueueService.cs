@@ -14,6 +14,8 @@ public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
     private readonly QueueClient _queueClient;
     private readonly ILogger<AzureStorageQueueService<T>> _logger;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly SemaphoreSlim _initLock = new(1, 1);
+    private bool _initialized;
 
     public AzureStorageQueueService(
         string connectionString,
@@ -36,11 +38,36 @@ public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
     /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        await _queueClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+        await EnsureInitializedAsync(cancellationToken);
+    }
+
+    private async Task EnsureInitializedAsync(CancellationToken cancellationToken = default)
+    {
+        if (_initialized)
+        {
+            return;
+        }
+
+        await _initLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_initialized)
+            {
+                return;
+            }
+
+            await _queueClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+            _initialized = true;
+        }
+        finally
+        {
+            _initLock.Release();
+        }
     }
 
     public async Task SendAsync(T message, CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
         var json = JsonSerializer.Serialize(message, _jsonOptions);
         var response = await _queueClient.SendMessageAsync(json, cancellationToken);
         _logger.LogDebug("Message sent to queue: {MessageId}", response.Value.MessageId);
@@ -48,6 +75,7 @@ public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
 
     public async Task SendAsync(T message, TimeSpan visibilityTimeout, CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
         var json = JsonSerializer.Serialize(message, _jsonOptions);
         var response = await _queueClient.SendMessageAsync(
             json,
@@ -62,6 +90,7 @@ public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
         TimeSpan? visibilityTimeout = null,
         CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
         var timeout = visibilityTimeout ?? TimeSpan.FromSeconds(30);
         var response = await _queueClient.ReceiveMessagesAsync(
             maxMessages,
@@ -99,6 +128,7 @@ public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
 
     public async Task DeleteAsync(string messageId, string popReceipt, CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
         await _queueClient.DeleteMessageAsync(messageId, popReceipt, cancellationToken);
         _logger.LogDebug("Message deleted from queue: {MessageId}", messageId);
     }
@@ -109,6 +139,7 @@ public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
         TimeSpan visibilityTimeout,
         CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
         await _queueClient.UpdateMessageAsync(
             messageId,
             popReceipt,
@@ -119,13 +150,17 @@ public class AzureStorageQueueService<T> : IMessageQueue<T> where T : class
 
     public async Task<int> GetApproximateCountAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
         var properties = await _queueClient.GetPropertiesAsync(cancellationToken);
         return (int)properties.Value.ApproximateMessagesCount;
     }
 
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
+        await EnsureInitializedAsync(cancellationToken);
         await _queueClient.ClearMessagesAsync(cancellationToken);
         _logger.LogInformation("Queue cleared");
     }
+
+    internal bool IsInitialized => _initialized;
 }

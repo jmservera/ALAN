@@ -109,11 +109,7 @@ public class AutonomousAgent
                 // Check if we should run batch learning
                 if (_batchLearningService.ShouldRunBatch(_iterationCount))
                 {
-                    _logger.LogInformation("Pausing agent loop for batch learning");
-                    _stateManager.UpdateStatus(AgentStatus.Paused);
-                    await _batchLearningService.RunBatchLearningAsync(cancellationToken);
-                    _iterationCount = 0; // Reset iteration counter
-                    _logger.LogInformation("Batch learning complete, resuming agent loop");
+                    await PauseAndRunBatchLearningAsync(cancellationToken);
                 }
 
                 // Check if we can execute another loop
@@ -167,6 +163,16 @@ public class AutonomousAgent
         // Log final usage stats
         var finalStats = _usageTracker.GetTodayStats();
         _logger.LogInformation("Agent stopped. Final usage: {Stats}", finalStats);
+    }
+
+    public async Task PauseAndRunBatchLearningAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Pausing agent loop for batch learning");
+        _stateManager.UpdateStatus(AgentStatus.Paused);
+        //TODO: wait until current iteration is complete
+        await _batchLearningService.RunBatchLearningAsync(cancellationToken);
+        _iterationCount = 0; // Reset iteration counter
+        _logger.LogInformation("Batch learning complete, resuming agent loop");
     }
 
     /// <summary>

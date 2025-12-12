@@ -1,5 +1,6 @@
 using ALAN.Shared.Models;
 using ALAN.Shared.Services.Queue;
+using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
@@ -17,11 +18,13 @@ public class HumanInputHandlerTests
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
             Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
+        var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
         
         var handler = new ALAN.Agent.Services.HumanInputHandler(
             mockLogger.Object,
             mockStateManager.Object,
-            mockQueue.Object);
+            mockQueue.Object,
+            mockMemoryConsolidation.Object);
 
         var testInput = new HumanInput
         {
@@ -64,11 +67,13 @@ public class HumanInputHandlerTests
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
             Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
+        var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
         
         var handler = new ALAN.Agent.Services.HumanInputHandler(
             mockLogger.Object,
             mockStateManager.Object,
-            mockQueue.Object);
+            mockQueue.Object,
+            mockMemoryConsolidation.Object);
 
         var chatInput = new HumanInput
         {
@@ -110,11 +115,13 @@ public class HumanInputHandlerTests
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
             Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
+        var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
         
         var handler = new ALAN.Agent.Services.HumanInputHandler(
             mockLogger.Object,
             mockStateManager.Object,
-            mockQueue.Object);
+            mockQueue.Object,
+            mockMemoryConsolidation.Object);
 
         var testInput = new HumanInput
         {
@@ -156,11 +163,13 @@ public class HumanInputHandlerTests
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
             Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
+        var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
         
         var handler = new ALAN.Agent.Services.HumanInputHandler(
             mockLogger.Object,
             mockStateManager.Object,
-            mockQueue.Object);
+            mockQueue.Object,
+            mockMemoryConsolidation.Object);
 
         var input = new HumanInput
         {
@@ -186,12 +195,13 @@ public class HumanInputHandlerTests
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
             Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
+        var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
         
         var handler = new ALAN.Agent.Services.HumanInputHandler(
             mockLogger.Object,
             mockStateManager.Object,
-            mockQueue.Object);
-
+            mockQueue.Object,
+            mockMemoryConsolidation.Object);
         handler.SubmitInput(new HumanInput { Type = HumanInputType.PauseAgent });
         handler.SubmitInput(new HumanInput { Type = HumanInputType.ResumeAgent });
 
@@ -200,5 +210,51 @@ public class HumanInputHandlerTests
 
         // Assert
         Assert.Equal(0, handler.GetPendingCount());
+    }
+
+    [Fact]
+    public async Task ProcessPendingInputsAsync_TriggersMemoryConsolidation()
+    {
+        // Arrange
+        var mockLogger = new Mock<ILogger<ALAN.Agent.Services.HumanInputHandler>>();
+        var mockStateManager = new Mock<ALAN.Agent.Services.StateManager>(
+            Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
+            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
+        var mockQueue = new Mock<IMessageQueue<HumanInput>>();
+        var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
+
+        var handler = new ALAN.Agent.Services.HumanInputHandler(
+            mockLogger.Object,
+            mockStateManager.Object,
+            mockQueue.Object,
+            mockMemoryConsolidation.Object);
+
+        var input = new HumanInput
+        {
+            Type = HumanInputType.TriggerMemoryConsolidation,
+            Content = "Manual consolidation"
+        };
+
+        var queueMessage = new QueueMessage<HumanInput>
+        {
+            MessageId = "msg-987",
+            PopReceipt = "receipt-987",
+            Content = input,
+            DequeueCount = 1
+        };
+
+        mockQueue
+            .Setup(q => q.ReceiveAsync(It.IsAny<int>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<QueueMessage<HumanInput>> { queueMessage });
+
+        mockQueue
+            .Setup(q => q.DeleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await handler.ProcessPendingInputsAsync(null!);
+
+        // Assert
+        mockMemoryConsolidation.Verify(m => m.ConsolidateShortTermMemoryAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

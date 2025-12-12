@@ -107,7 +107,7 @@ Respond with ONLY a JSON object in this format:
     {
         _logger.LogInformation("Extracting learnings since {Since}", since);
 
-        var recentMemories = await _longTermMemory.GetRecentMemoriesAsync(500, cancellationToken);
+        var recentMemories = await _longTermMemory.GetRecentMemoriesAsync(500, cancellationToken) ?? [];
         var memoriesSince = recentMemories.Where(m => m.Timestamp >= since).ToList();
 
         if (!memoriesSince.Any())
@@ -149,9 +149,9 @@ Respond with ONLY a JSON object in this format:
     {
         _logger.LogInformation("Starting short-term memory consolidation");
 
-        // Retrieve all thoughts and actions from short-term memory
-        var thoughts = await _stateManager.GetAllThoughtsFromMemoryAsync(cancellationToken);
-        var actions = await _stateManager.GetAllActionsFromMemoryAsync(cancellationToken);
+        // Retrieve all thoughts and actions from persisted short-term memory (fallback to in-memory state)
+        var thoughts = await GetPersistedThoughtsAsync(cancellationToken);
+        var actions = await GetPersistedActionsAsync(cancellationToken);
 
         _logger.LogInformation("Retrieved {ThoughtCount} thoughts and {ActionCount} actions from short-term memory",
             thoughts.Count, actions.Count);
@@ -183,6 +183,7 @@ Respond with ONLY a JSON object in this format:
                 };
 
                 await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
+                await _shortTermMemory.SetAsync($"memory:{memory.Id}", memory, TimeSpan.FromHours(24), cancellationToken);
                 thoughtsStored++;
             }
         }
@@ -208,6 +209,7 @@ Respond with ONLY a JSON object in this format:
                 };
 
                 await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
+                await _shortTermMemory.SetAsync($"memory:{memory.Id}", memory, TimeSpan.FromHours(24), cancellationToken);
                 actionsStored++;
             }
         }
@@ -336,6 +338,82 @@ Respond with ONLY a JSON object in this format:
         return deletedCount;
     }
 
+    private async Task<List<AgentThought>> GetPersistedThoughtsAsync(CancellationToken cancellationToken)
+    {
+        var thoughts = new List<AgentThought>();
+
+        try
+        {
+            var keys = await _shortTermMemory.GetKeysAsync("thought:*", cancellationToken);
+            if (keys.Count > 0)
+            {
+                var tasks = keys.Select(async k =>
+                {
+                    try { return await _shortTermMemory.GetAsync<AgentThought>(k, cancellationToken); }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to load thought from short-term memory key {Key}", k);
+                        return null;
+                    }
+                });
+
+                var results = await Task.WhenAll(tasks);
+                thoughts.AddRange(results.Where(t => t != null)!);
+            }
+
+            // Fallback to in-memory state if nothing persisted
+            if (thoughts.Count == 0)
+            {
+                thoughts = await _stateManager.GetAllThoughtsFromMemoryAsync(cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading thoughts from short-term memory; falling back to state manager");
+            thoughts = await _stateManager.GetAllThoughtsFromMemoryAsync(cancellationToken);
+        }
+
+        return thoughts;
+    }
+
+    private async Task<List<AgentAction>> GetPersistedActionsAsync(CancellationToken cancellationToken)
+    {
+        var actions = new List<AgentAction>();
+
+        try
+        {
+            var keys = await _shortTermMemory.GetKeysAsync("action:*", cancellationToken);
+            if (keys.Count > 0)
+            {
+                var tasks = keys.Select(async k =>
+                {
+                    try { return await _shortTermMemory.GetAsync<AgentAction>(k, cancellationToken); }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to load action from short-term memory key {Key}", k);
+                        return null;
+                    }
+                });
+
+                var results = await Task.WhenAll(tasks);
+                actions.AddRange(results.Where(a => a != null)!);
+            }
+
+            // Fallback to in-memory state if nothing persisted
+            if (actions.Count == 0)
+            {
+                actions = await _stateManager.GetAllActionsFromMemoryAsync(cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error loading actions from short-term memory; falling back to state manager");
+            actions = await _stateManager.GetAllActionsFromMemoryAsync(cancellationToken);
+        }
+
+        return actions;
+    }
+
     private ConsolidatedLearning ParseLearningResponse(string response, List<MemoryEntry> sourceMemories)
     {
         try
@@ -347,7 +425,7 @@ Respond with ONLY a JSON object in this format:
             if (jsonStart >= 0 && jsonEnd > jsonStart)
             {
                 var jsonStr = response.Substring(jsonStart, jsonEnd - jsonStart + 1);
-                var parsed = JsonSerializer.Deserialize<LearningResponse>(jsonStr);
+                var parsed = JsonSerializer.Deserialize<LearningResponse>(jsonStr, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
                 if (parsed != null)
                 {

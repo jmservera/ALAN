@@ -1,5 +1,6 @@
 @page
 @model ALAN.Web.Pages.ChatModel
+@using System.Text.Json
 @{
     ViewData["Title"] = "Chat with ALAN";
 }
@@ -61,6 +62,7 @@
                             <button class="btn btn-secondary" id="pause-btn">⏸️ Pause Agent</button>
                             <button class="btn btn-success" id="resume-btn">▶️ Resume Agent</button>
                             <button class="btn btn-info" id="batch-learning-btn">📚 Trigger Batch Learning</button>
+                            <button class="btn btn-outline-primary" id="memory-consolidation-btn">🧠 Consolidate Memory</button>
                         </div>
                     </div>
 
@@ -81,6 +83,13 @@
 
 @section Scripts {
     <script>
+        const chatApiBaseUrl = '@Model.ChatApiBaseUrl';
+        let sessionId = localStorage.getItem('alanChatSessionId');
+        if (!sessionId) {
+            sessionId = crypto.randomUUID();
+            localStorage.setItem('alanChatSessionId', sessionId);
+        }
+
         const chatMessages = document.getElementById('chat-messages');
         const chatInput = document.getElementById('chat-input');
         const sendChatBtn = document.getElementById('send-chat-btn');
@@ -122,15 +131,19 @@
             sendChatBtn.disabled = true;
 
             try {
-                const response = await fetch('/api/chat', {
+                const response = await fetch(`${chatApiBaseUrl}/chat`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message })
+                    body: JSON.stringify({ message: message, sessionId: sessionId })
                 });
 
                 if (response.ok) {
                     const data = await response.json();
-                    addMessage(data.response, 'agent');
+                    if (data.messageId) {
+                        sessionId = data.messageId;
+                        localStorage.setItem('alanChatSessionId', sessionId);
+                    }
+                    addMessage(data.response ?? data, 'agent');
                 } else {
                     addMessage('Sorry, I encountered an error processing your message.', 'agent');
                 }
@@ -198,6 +211,7 @@
         document.getElementById('pause-btn').addEventListener('click', () => sendCommand('pause'));
         document.getElementById('resume-btn').addEventListener('click', () => sendCommand('resume'));
         document.getElementById('batch-learning-btn').addEventListener('click', () => sendCommand('batch-learning'));
+        document.getElementById('memory-consolidation-btn').addEventListener('click', () => sendCommand('memory-consolidation'));
 
         function escapeHtml(text) {
             const div = document.createElement('div');

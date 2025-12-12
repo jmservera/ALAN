@@ -4,6 +4,7 @@ using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Agents.AI;
 using Moq;
+using ALAN.Shared.Services.Queue;
 
 namespace ALAN.Agent.Tests.Services;
 
@@ -29,7 +30,9 @@ public class AutonomousAgentTests
             Mock.Of<ILogger<BatchLearningService>>());
         var humanInput = new HumanInputHandler(
             Mock.Of<ILogger<HumanInputHandler>>(),
-            stateManager);
+            stateManager,
+            Mock.Of<IMessageQueue<HumanInput>>(),
+            mockConsolidation.Object);
 
         _agent = new AutonomousAgent(
             mockAIAgent.Object,
@@ -842,7 +845,9 @@ public class AutonomousAgentTests
             Mock.Of<ILogger<BatchLearningService>>());
         var humanInput = new HumanInputHandler(
             Mock.Of<ILogger<HumanInputHandler>>(),
-            stateManager);
+            stateManager,
+            Mock.Of<IMessageQueue<HumanInput>>(),
+            mockConsolidation.Object);
 
         return new AutonomousAgent(
             mockAIAgent.Object,

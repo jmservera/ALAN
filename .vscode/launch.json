@@ -25,12 +25,21 @@
         "action": "openExternally",
         "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
       }
+    },
+    {
+      "name": "C#: Launch ALAN.ChatApi",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/ALAN.ChatApi/ALAN.ChatApi.csproj",
+      "envFile": "${workspaceFolder}/.env",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "openOnFirstSessionStart"
     }
   ],
   "compounds": [
     {
-      "name": "Launch Agent + Web",
-      "configurations": ["C#: Launch ALAN.Agent", "C#: Launch ALAN.Web"],
+      "name": "Launch Agent + Web + API",
+      "configurations": ["C#: Launch ALAN.Agent", "C#: Launch ALAN.Web", "C#: Launch ALAN.ChatApi"],
       "stopAll": true,
       "preLaunchTask": "build-all"
     }

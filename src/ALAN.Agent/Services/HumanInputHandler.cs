@@ -1,5 +1,6 @@
 using ALAN.Shared.Models;
 using ALAN.Shared.Services.Queue;
+using ALAN.Shared.Services.Memory;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
@@ -16,16 +17,19 @@ public class HumanInputHandler
     private readonly ILogger<HumanInputHandler> _logger;
     private readonly StateManager _stateManager;
     private readonly IMessageQueue<HumanInput> _humanInputQueue;
+    private readonly IMemoryConsolidationService _memoryConsolidation;
     private AutonomousAgent? _agent;
 
     public HumanInputHandler(
         ILogger<HumanInputHandler> logger,
         StateManager stateManager,
-        IMessageQueue<HumanInput> humanInputQueue)
+        IMessageQueue<HumanInput> humanInputQueue,
+        IMemoryConsolidationService memoryConsolidation)
     {
         _logger = logger;
         _stateManager = stateManager;
         _humanInputQueue = humanInputQueue;
+        _memoryConsolidation = memoryConsolidation;
     }
 
     public void SetAgent(AutonomousAgent agent)
@@ -137,7 +141,7 @@ public class HumanInputHandler
         }
     }
 
-    private Task<HumanInputResponse> ProcessInputAsync(HumanInput input, AutonomousAgent agent, CancellationToken cancellationToken)
+    private async Task<HumanInputResponse> ProcessInputAsync(HumanInput input, AutonomousAgent agent, CancellationToken cancellationToken)
     {
         _logger.LogInformation("Processing human input: {Type}", input.Type);
 
@@ -145,44 +149,52 @@ public class HumanInputHandler
         {
             case HumanInputType.UpdatePrompt:
                 agent.UpdatePrompt(input.Content);
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Prompt updated successfully"
-                });
+                };
 
             case HumanInputType.PauseAgent:
                 agent.Pause();
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Agent paused"
-                });
+                };
 
             case HumanInputType.ResumeAgent:
                 agent.Resume();
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = "Agent resumed"
-                });
+                };
 
             case HumanInputType.TriggerBatchLearning:
-                // This would trigger the batch learning process
-                _logger.LogInformation("Batch learning trigger requested by human");
-                return Task.FromResult(new HumanInputResponse
+                await agent.PauseAndRunBatchLearningAsync(cancellationToken);
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
-                    Message = "Batch learning will be triggered in next iteration"
-                });
+                    Message = "Batch learning triggered"
+                };
+
+            case HumanInputType.TriggerMemoryConsolidation:
+                await _memoryConsolidation.ConsolidateShortTermMemoryAsync(cancellationToken);
+                return new HumanInputResponse
+                {
+                    InputId = input.Id,
+                    Success = true,
+                    Message = "Memory consolidation triggered"
+                };
 
             case HumanInputType.QueryState:
                 var state = _stateManager.GetCurrentState();
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
@@ -191,35 +203,35 @@ public class HumanInputHandler
                     {
                         ["state"] = state
                     }
-                });
+                };
 
             case HumanInputType.AddGoal:
                 _stateManager.UpdateGoal(input.Content);
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = true,
                     Message = $"Goal updated to: {input.Content}"
-                });
+                };
 
             case HumanInputType.ChatWithAgent:
                 // Chat requests are handled by ChatApi via WebSockets
                 _logger.LogWarning("Chat request should not be in steering queue - redirecting to ChatApi");
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = false,
                     Message = "Chat requests should be sent to ChatApi WebSocket endpoint"
-                });
+                };
 
             default:
                 _logger.LogWarning("Unknown input type: {Type}", input.Type);
-                return Task.FromResult(new HumanInputResponse
+                return new HumanInputResponse
                 {
                     InputId = input.Id,
                     Success = false,
                     Message = $"Unknown input type: {input.Type}"
-                });
+                };
         }
     }
 

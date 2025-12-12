@@ -27,6 +27,7 @@ public interface IShortTermMemoryService
     Task<bool> DeleteAsync(string key, CancellationToken cancellationToken = default);
     Task<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
     Task<List<string>> GetKeysAsync(string pattern = "*", CancellationToken cancellationToken = default);
+    Task<List<MemoryEntry>> GetRecentMemoriesAsync(int count = 100, CancellationToken cancellationToken = default);
 }
 
 /// <summary>

@@ -16,6 +16,10 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
     private readonly ILogger<AzureBlobLongTermMemoryService> _logger;
     private const string ContainerName = "agent-memories";
     private bool _isInitialized = false;
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public AzureBlobLongTermMemoryService(
         string connectionString,
@@ -136,7 +140,7 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
                 {
                     var response = await blobClient.DownloadContentAsync(cancellationToken);
                     var json = response.Value.Content.ToString();
-                    var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
+                    var memory = JsonSerializer.Deserialize<MemoryEntry>(json, JsonOptions);
 
                     if (memory != null)
                     {
@@ -201,7 +205,7 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
                         {
                             var response = await blobClient.DownloadContentAsync(cancellationToken);
                             var json = response.Value.Content.ToString();
-                            var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
+                            var memory = JsonSerializer.Deserialize<MemoryEntry>(json, JsonOptions);
 
                             if (memory != null &&
                                 (memory.Content.Contains(queryLower, StringComparison.OrdinalIgnoreCase) ||
@@ -259,7 +263,7 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
                     {
                         var response = await blobClient.DownloadContentAsync(cancellationToken);
                         var json = response.Value.Content.ToString();
-                        var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
+                        var memory = JsonSerializer.Deserialize<MemoryEntry>(json, JsonOptions);
 
                         if (memory != null)
                         {
@@ -387,7 +391,7 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
                         {
                             var response = await blobClient.DownloadContentAsync(cancellationToken);
                             var json = response.Value.Content.ToString();
-                            var memory = JsonSerializer.Deserialize<MemoryEntry>(json);
+                            var memory = JsonSerializer.Deserialize<MemoryEntry>(json, JsonOptions);
 
                             if (memory != null && memory.Type == type)
                             {

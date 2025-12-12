@@ -141,6 +141,30 @@ public class AzureStorageQueueServiceTests
         // Assert - should not throw
         Assert.NotNull(service);
     }
+
+    [Fact]
+    public async Task SendAsync_CreatesQueueIfMissing()
+    {
+        // Arrange: use a unique queue name to avoid collisions
+        var queueName = $"test-queue-{Guid.NewGuid():N}";
+        var service = new AzureStorageQueueService<TestMessage>(
+            TestConnectionString,
+            queueName,
+            _mockLogger.Object);
+
+        var message = new TestMessage { Id = "test-1", Content = "Hello" };
+
+        // Act: send without explicit InitializeAsync to verify self-initialization
+        await service.SendAsync(message);
+
+        // Assert: message should be retrievable
+        var messages = await service.ReceiveAsync(1, TimeSpan.FromSeconds(5));
+        Assert.NotEmpty(messages);
+        Assert.Equal("test-1", messages[0].Content.Id);
+
+        // Cleanup
+        await service.ClearAsync();
+    }
 }
 
 public class TestMessage

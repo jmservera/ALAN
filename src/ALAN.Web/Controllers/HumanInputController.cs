@@ -116,6 +116,22 @@ public class HumanInputController : ControllerBase
         
         return Ok(new { message = "Batch learning trigger queued" });
     }
+
+    [HttpPost("memory-consolidation")]
+    public async Task<IActionResult> TriggerMemoryConsolidation(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Received memory consolidation trigger");
+        
+        var input = new HumanInput
+        {
+            Type = HumanInputType.TriggerMemoryConsolidation,
+            Content = "Memory consolidation trigger"
+        };
+
+        await _humanInputQueue.SendAsync(input, cancellationToken);
+
+        return Ok(new { message = "Memory consolidation trigger queued" });
+    }
 }
 
 public class UpdatePromptRequest

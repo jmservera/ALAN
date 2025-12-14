@@ -1,7 +1,9 @@
 using ALAN.Shared.Models;
+using ALAN.Shared.Services.Resilience;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Logging;
+using Polly;
 using System.Text.Json;
 
 namespace ALAN.Shared.Services.Memory;
@@ -14,6 +16,7 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
 {
     private readonly BlobContainerClient _containerClient;
     private readonly ILogger<AzureBlobShortTermMemoryService> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
     private const string ContainerName = "agent-cache";
     private bool _isInitialized = false;
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -26,6 +29,7 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
         ILogger<AzureBlobShortTermMemoryService> logger)
     {
         _logger = logger;
+        _resiliencePipeline = ResiliencePolicy.CreateStorageRetryPipeline(logger);
         
         try
         {
@@ -47,7 +51,9 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
 
         try
         {
-            await _containerClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+                await _containerClient.CreateIfNotExistsAsync(cancellationToken: ct),
+                cancellationToken);
             _isInitialized = true;
             _logger.LogInformation("Azure Blob container '{ContainerName}' is ready", ContainerName);
             return true;
@@ -97,10 +103,14 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
             {
                 HttpHeaders = new BlobHttpHeaders { ContentType = "application/json" }
             };
-            await blobClient.UploadAsync(stream, uploadOptions, cancellationToken);
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+                await blobClient.UploadAsync(stream, uploadOptions, ct),
+                cancellationToken);
             
             // Set metadata after upload
-            await blobClient.SetMetadataAsync(metadata, cancellationToken: cancellationToken);
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+                await blobClient.SetMetadataAsync(metadata, cancellationToken: ct),
+                cancellationToken);
             
             _logger.LogTrace("Set cache key {Key} in blob {BlobName} with expiration {Expiration}", key, blobName, expiration);
         }
@@ -123,12 +133,18 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
 
         try
         {
-            if (!await blobClient.ExistsAsync(cancellationToken))
+            var exists = await _resiliencePipeline.ExecuteAsync(async ct =>
+                await blobClient.ExistsAsync(ct),
+                cancellationToken);
+            
+            if (!exists)
             {
                 return default;
             }
 
-            var response = await blobClient.DownloadContentAsync(cancellationToken);
+            var response = await _resiliencePipeline.ExecuteAsync(async ct =>
+                await blobClient.DownloadContentAsync(ct),
+                cancellationToken);
             var json = response.Value.Content.ToString();
             var cacheEntry = JsonSerializer.Deserialize<CacheEntry>(json, JsonOptions);
 
@@ -140,7 +156,9 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
             // Check if expired
             if (cacheEntry.ExpiresAt.HasValue && cacheEntry.ExpiresAt.Value < DateTime.UtcNow)
             {
-                await blobClient.DeleteIfExistsAsync(cancellationToken: cancellationToken);
+                await _resiliencePipeline.ExecuteAsync(async ct =>
+                    await blobClient.DeleteIfExistsAsync(cancellationToken: ct),
+                    cancellationToken);
                 _logger.LogTrace("Cache key {Key} expired and removed", key);
                 return default;
             }
@@ -173,7 +191,9 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
 
         try
         {
-            var response = await blobClient.DeleteIfExistsAsync(cancellationToken: cancellationToken);
+            var response = await _resiliencePipeline.ExecuteAsync(async ct =>
+                await blobClient.DeleteIfExistsAsync(cancellationToken: ct),
+                cancellationToken);
             if (response.Value)
             {
                 _logger.LogTrace("Deleted cache key {Key}", key);
@@ -200,7 +220,9 @@ public class AzureBlobShortTermMemoryService : IShortTermMemoryService
 
         try
         {
-            var response = await blobClient.ExistsAsync(cancellationToken);
+            var response = await _resiliencePipeline.ExecuteAsync(async ct =>
+                await blobClient.ExistsAsync(ct),
+                cancellationToken);
             return response.Value;
         }
         catch (Exception ex)

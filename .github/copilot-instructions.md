@@ -214,11 +214,49 @@ Configuration constants in `AutonomousAgent.cs`:
 
 #### Resiliency
 
+ALAN implements comprehensive resiliency patterns using **Polly v8.5.0** for all Azure service integrations. All external API calls are wrapped with retry policies featuring exponential backoff and jitter.
+
+**Resilience Implementation:**
+- **Use ResiliencePolicy helper** - Located in `src/ALAN.Shared/Services/Resilience/ResiliencePolicy.cs`
+- **Storage operations** - 3 retries, 1s initial delay, ~7s max (handles 429, 503, 504, 408)
+- **OpenAI operations** - 5 retries, 2s initial delay, ~62s max (handles 429, 503, 504, 500)
+- **Integrated services** - AzureBlobShortTermMemoryService, AzureBlobLongTermMemoryService, AzureStorageQueueService, AutonomousAgent
+- **Proper cancellation** - OperationCanceledException is NOT retried, allows immediate cancellation
+
+**When adding new Azure service calls:**
+```csharp
+// Initialize pipeline in constructor
+private readonly ResiliencePipeline _resiliencePipeline;
+
+public MyService(ILogger<MyService> logger)
+{
+    _resiliencePipeline = ResiliencePolicy.CreateStorageRetryPipeline(logger);
+}
+
+// Wrap all external calls
+public async Task<Data> GetDataAsync(CancellationToken ct)
+{
+    return await _resiliencePipeline.ExecuteAsync(async ct =>
+        await _azureClient.GetAsync(ct), ct);
+}
+```
+
+**General Resiliency Principles:**
 - **Design for failure** - Assume Azure services may be temporarily unavailable
 - **Implement idempotency** - State changes should be safe to retry
 - **Use appropriate timeouts** - Prevent indefinite waits on external calls
 - **Log meaningful context** - Include correlation IDs for distributed tracing
 - **Graceful degradation** - UI should work with SignalR fallback to polling
+
+**Testing Resiliency:**
+- Test retry on transient errors (429, 503, 504, 408)
+- Test success after retries
+- Test failure after max retries
+- Test no retry on non-transient errors (404, 401)
+- Test proper cancellation token propagation
+- Verify retry loop stops immediately on cancellation
+
+For detailed documentation, see `docs/RESILIENCY.md`.
 
 #### Code Style
 

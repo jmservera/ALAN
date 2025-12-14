@@ -143,10 +143,8 @@ public class HumanInputControllerTests
         // Arrange
         var controller = new HumanInputController(_loggerMock.Object, _queueMock.Object);
 
-        // Act
-#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type
-        var result = await controller.SubmitInput(null, CancellationToken.None);
-#pragma warning restore CS8625
+        // Act - Using default! to explicitly indicate null test case
+        var result = await controller.SubmitInput(default(HumanInput)!, CancellationToken.None);
 
         // Assert
         Assert.IsType<BadRequestObjectResult>(result);

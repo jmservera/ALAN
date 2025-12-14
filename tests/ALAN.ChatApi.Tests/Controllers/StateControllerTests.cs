@@ -46,7 +46,6 @@ public class StateControllerTests
 
         // Assert
         var okResult1 = Assert.IsType<OkObjectResult>(result1);
-        var okResult2 = Assert.IsType<OkObjectResult>(result2);
         
         var state1 = Assert.IsType<AgentState>(okResult1.Value);
         var state2 = Assert.IsType<OkObjectResult>(result2).Value as AgentState;

@@ -28,7 +28,7 @@ public class HumanInputControllerTests
         var result = await controller.PauseAgent(CancellationToken.None);
 
         // Assert
-        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         _queueMock.Verify(q => q.SendAsync(
             It.Is<HumanInput>(hi => hi.Type == HumanInputType.PauseAgent),
             It.IsAny<CancellationToken>()), Times.Once);
@@ -44,7 +44,7 @@ public class HumanInputControllerTests
         var result = await controller.ResumeAgent(CancellationToken.None);
 
         // Assert
-        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         _queueMock.Verify(q => q.SendAsync(
             It.Is<HumanInput>(hi => hi.Type == HumanInputType.ResumeAgent),
             It.IsAny<CancellationToken>()), Times.Once);
@@ -61,7 +61,7 @@ public class HumanInputControllerTests
         var result = await controller.UpdatePrompt(promptRequest, CancellationToken.None);
 
         // Assert
-        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         _queueMock.Verify(q => q.SendAsync(
             It.Is<HumanInput>(hi => 
                 hi.Type == HumanInputType.UpdatePrompt && 
@@ -96,7 +96,7 @@ public class HumanInputControllerTests
         var result = await controller.TriggerBatchLearning(CancellationToken.None);
 
         // Assert
-        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         _queueMock.Verify(q => q.SendAsync(
             It.Is<HumanInput>(hi => hi.Type == HumanInputType.TriggerBatchLearning),
             It.IsAny<CancellationToken>()), Times.Once);
@@ -112,7 +112,7 @@ public class HumanInputControllerTests
         var result = await controller.TriggerMemoryConsolidation(CancellationToken.None);
 
         // Assert
-        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         _queueMock.Verify(q => q.SendAsync(
             It.Is<HumanInput>(hi => hi.Type == HumanInputType.TriggerMemoryConsolidation),
             It.IsAny<CancellationToken>()), Times.Once);
@@ -133,7 +133,7 @@ public class HumanInputControllerTests
         var result = await controller.SubmitInput(input, CancellationToken.None);
 
         // Assert
-        var okResult = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         _queueMock.Verify(q => q.SendAsync(input, It.IsAny<CancellationToken>()), Times.Once);
     }
 

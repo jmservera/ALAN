@@ -21,6 +21,17 @@ interface Thought {
   toolCalls?: ToolCall[];
 }
 
+interface StructuredAction {
+  action: string;
+  goal?: string;
+  extra?: string;
+}
+
+interface StructuredContent {
+  reasoning?: string;
+  actions?: StructuredAction[];
+}
+
 interface ThoughtsListProps {
   thoughts: Thought[];
 }
@@ -33,6 +44,18 @@ function ThoughtsList({ thoughts }: ThoughtsListProps) {
     description: 'Recent thoughts from the autonomous agent',
     value: thoughts,
   });
+
+  const parseStructuredContent = (content: string): { structured: StructuredContent | null; text: string } => {
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed && (parsed.reasoning || parsed.actions)) {
+        return { structured: parsed, text: content };
+      }
+    } catch {
+      // Not JSON, return as plain text
+    }
+    return { structured: null, text: content };
+  };
 
   const getThoughtIcon = (type: string) => {
     switch (type.toLowerCase()) {
@@ -56,30 +79,42 @@ function ThoughtsList({ thoughts }: ThoughtsListProps) {
         <p className="empty-message">No thoughts yet...</p>
       ) : (
         <div className="thoughts-container">
-          {thoughts.slice().reverse().map((thought) => (
-            <div 
-              key={thought.id} 
-              className="thought-item"
-              onClick={() => setSelectedThought(thought)}
-              style={{ cursor: 'pointer' }}
-            >
-              <div className="thought-header">
-                <span className="thought-icon">{getThoughtIcon(thought.type)}</span>
-                <span className="thought-type">{thought.type}</span>
-                {thought.toolCalls && thought.toolCalls.length > 0 && (
-                  <span className="tool-badge" title={`${thought.toolCalls.length} tool calls`}>
-                    🔧 {thought.toolCalls.length}
+          {thoughts.slice().reverse().map((thought) => {
+            const { structured, text } = parseStructuredContent(thought.content);
+            const displayText = structured?.reasoning 
+              ? structured.reasoning.substring(0, 150) 
+              : text.substring(0, 150);
+            
+            return (
+              <div 
+                key={thought.id} 
+                className="thought-item"
+                onClick={() => setSelectedThought(thought)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="thought-header">
+                  <span className="thought-icon">{getThoughtIcon(thought.type)}</span>
+                  <span className="thought-type">{thought.type}</span>
+                  {structured?.actions && structured.actions.length > 0 && (
+                    <span className="action-badge" title={`${structured.actions.length} planned actions`}>
+                      🎬 {structured.actions.length}
+                    </span>
+                  )}
+                  {thought.toolCalls && thought.toolCalls.length > 0 && (
+                    <span className="tool-badge" title={`${thought.toolCalls.length} tool calls`}>
+                      🔧 {thought.toolCalls.length}
+                    </span>
+                  )}
+                  <span className="thought-time">
+                    {new Date(thought.timestamp).toLocaleTimeString()}
                   </span>
-                )}
-                <span className="thought-time">
-                  {new Date(thought.timestamp).toLocaleTimeString()}
-                </span>
+                </div>
+                <div className="thought-content">
+                  {displayText}{(structured?.reasoning || text).length > 150 ? '...' : ''}
+                </div>
               </div>
-              <div className="thought-content">
-                {thought.content.substring(0, 150)}{thought.content.length > 150 ? '...' : ''}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       
@@ -101,10 +136,57 @@ function ThoughtsList({ thoughts }: ThoughtsListProps) {
                 </span>
               </div>
               
-              <div className="detail-section">
-                <strong>Content:</strong>
-                <p>{selectedThought.content}</p>
-              </div>
+              {(() => {
+                const { structured, text } = parseStructuredContent(selectedThought.content);
+                
+                if (structured) {
+                  return (
+                    <>
+                      {structured.reasoning && (
+                        <div className="detail-section">
+                          <strong>💭 Reasoning:</strong>
+                          <p className="reasoning-text">{structured.reasoning}</p>
+                        </div>
+                      )}
+                      
+                      {structured.actions && structured.actions.length > 0 && (
+                        <div className="detail-section">
+                          <strong>🎬 Planned Actions ({structured.actions.length}):</strong>
+                          <div className="actions-list">
+                            {structured.actions.map((action, idx) => (
+                              <div key={idx} className="action-item">
+                                <div className="action-header">
+                                  <span className="action-number">{idx + 1}</span>
+                                  <strong>{action.action}</strong>
+                                </div>
+                                {action.goal && (
+                                  <div className="action-detail">
+                                    <span className="action-label">🎯 Goal:</span>
+                                    <p>{action.goal}</p>
+                                  </div>
+                                )}
+                                {action.extra && (
+                                  <div className="action-detail">
+                                    <span className="action-label">ℹ️ Context:</span>
+                                    <p>{action.extra}</p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  );
+                } else {
+                  return (
+                    <div className="detail-section">
+                      <strong>Content:</strong>
+                      <p>{text}</p>
+                    </div>
+                  );
+                }
+              })()}
               
               {selectedThought.toolCalls && selectedThought.toolCalls.length > 0 && (
                 <div className="detail-section">

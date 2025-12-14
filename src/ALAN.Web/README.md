@@ -37,8 +37,32 @@ The app will be available at http://localhost:5269
 
 - **Real-time Agent Observability**: View agent status, current goals, and prompts
 - **Thoughts & Actions**: See the agent's recent thoughts and actions in real-time
+- **Structured Reasoning Display**: Automatically parses and beautifully displays structured JSON thoughts with reasoning and planned actions
 - **Human Steering**: Send guidance, pause/resume the agent
 - **CopilotKit Integration**: Built-in AI assistant that can answer questions about the agent's state
+
+### Structured Thought Format
+
+The UI automatically detects and beautifully renders thoughts in this JSON format:
+
+```json
+{
+  "reasoning": "Building on my previous success...",
+  "actions": [
+    {
+      "action": "Search Microsoft Learn for courses",
+      "goal": "Find structured training",
+      "extra": "This extends my knowledge from previous iterations"
+    }
+  ]
+}
+```
+
+Features:
+- 🎬 Action badges showing the number of planned actions
+- 💭 Highlighted reasoning sections
+- 🎯 Goal and context display for each action
+- Numbered action items for easy reference
 
 ## Build
 

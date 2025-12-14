@@ -35,8 +35,13 @@ jobs:
             - name: Build Next.js Frontend
               run: |
                   cd src/ALAN.Web
-                  npm install
+                  npm install --include=dev
                   npm run build
+
+            - name: Test Next.js Frontend
+              run: |
+                  cd src/ALAN.Web
+                  npm test
 
             - name: Build .NET Projects
               run: |

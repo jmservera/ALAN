@@ -129,51 +129,51 @@
   .thought-item {
     padding: 0.75rem;
   }
-  
+
   .thought-header {
     flex-wrap: wrap;
     gap: 0.4rem;
   }
-  
+
   .thought-icon {
     font-size: 1rem;
   }
-  
+
   .thought-type {
     font-size: 0.9rem;
   }
-  
+
   .tool-badge,
   .action-badge {
     font-size: 0.7rem;
     padding: 0.1rem 0.4rem;
   }
-  
+
   .thought-time {
     flex-basis: 100%;
     margin-left: 0;
     font-size: 0.8rem;
   }
-  
+
   .thought-content {
     font-size: 0.9rem;
   }
-  
+
   .modal-content {
     width: 95%;
     max-height: 95vh;
     border-radius: 4px;
   }
-  
+
   .modal-header,
   .modal-body {
     padding: 1rem;
   }
-  
+
   .modal-header h3 {
     font-size: 1.1rem;
   }
-  
+
   .detail-section pre {
     font-size: 0.85rem;
     padding: 0.75rem;
@@ -185,15 +185,15 @@
   .thought-item {
     padding: 0.5rem;
   }
-  
+
   .thought-content {
     font-size: 0.85rem;
   }
-  
+
   .modal-header h3 {
     font-size: 1rem;
   }
-  
+
   .modal-close {
     font-size: 1.5rem;
     width: 28px;
@@ -351,11 +351,17 @@
 }
 
 .action-item {
-  background: linear-gradient(135deg, rgba(156, 39, 176, 0.1) 0%, rgba(100, 108, 255, 0.1) 100%);
+  background: linear-gradient(
+    135deg,
+    rgba(156, 39, 176, 0.1) 0%,
+    rgba(100, 108, 255, 0.1) 100%
+  );
   border: 1px solid rgba(156, 39, 176, 0.3);
   border-radius: 8px;
   padding: 1rem;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
 .action-item:hover {

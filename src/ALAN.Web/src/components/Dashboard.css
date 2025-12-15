@@ -68,26 +68,26 @@
   .dashboard {
     padding: 0.75rem;
   }
-  
+
   .dashboard-header h1 {
     font-size: 1.75rem;
   }
-  
+
   .dashboard-grid {
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
   }
-  
+
   .left-panel {
     order: 1;
     grid-column: 1;
   }
-  
+
   .center-panel {
     order: 2;
     grid-column: 2;
   }
-  
+
   .right-panel {
     order: 3;
     grid-column: 1 / -1;
@@ -99,47 +99,47 @@
   .dashboard {
     padding: 0.5rem;
   }
-  
+
   .dashboard-header {
     margin-bottom: 1rem;
     padding-bottom: 0.75rem;
   }
-  
+
   .dashboard-header h1 {
     font-size: 1.5rem;
   }
-  
+
   .subtitle {
     font-size: 0.9rem;
   }
-  
+
   .dashboard-grid {
     grid-template-columns: 1fr;
     gap: 1rem;
   }
-  
+
   .left-panel,
   .center-panel,
   .right-panel {
     gap: 1rem;
   }
-  
+
   .left-panel {
     order: 1;
   }
-  
+
   .center-panel {
     order: 2;
   }
-  
+
   .right-panel {
     order: 3;
   }
-  
+
   .panel {
     padding: 1rem;
   }
-  
+
   .panel h2 {
     font-size: 1.25rem;
   }
@@ -150,23 +150,23 @@
   .dashboard {
     padding: 0.25rem;
   }
-  
+
   .dashboard-header h1 {
     font-size: 1.25rem;
   }
-  
+
   .subtitle {
     font-size: 0.85rem;
   }
-  
+
   .dashboard-grid {
     gap: 0.75rem;
   }
-  
+
   .panel {
     padding: 0.75rem;
   }
-  
+
   .panel h2 {
     font-size: 1.1rem;
   }

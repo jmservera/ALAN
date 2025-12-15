@@ -2,12 +2,54 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "start_azurite_blob",
+      "command": "${command:azurite.start_blob}",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "start_azurite_queue",
+      "command": "${command:azurite.start_queue}",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "stop_azurite_blob",
+      "command": "${command:azurite.close_blob}",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "stop_azurite_queue",
+      "command": "${command:azurite.close_queue}",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "start_azurite",
+      "dependsOn": ["start_azurite_blob", "start_azurite_queue"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "stop_azurite",
+      "dependsOn": ["stop_azurite_blob", "stop_azurite_queue"],
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+
+    {
       "label": "npm-install-web",
       "type": "shell",
       "command": "npm",
-      "args": [
-        "install"
-      ],
+      "args": ["install"],
       "options": {
         "cwd": "${workspaceFolder}/src/ALAN.Web"
       },
@@ -17,10 +59,7 @@
       "label": "build-web-frontend",
       "type": "shell",
       "command": "npm",
-      "args": [
-        "run",
-        "build"
-      ],
+      "args": ["run", "build"],
       "options": {
         "cwd": "${workspaceFolder}/src/ALAN.Web"
       },
@@ -32,10 +71,7 @@
       "label": "dev-web-frontend",
       "type": "shell",
       "command": "npm",
-      "args": [
-        "run",
-        "dev"
-      ],
+      "args": ["run", "dev"],
       "isBackground": true,
       "options": {
         "cwd": "${workspaceFolder}/src/ALAN.Web"
@@ -61,6 +97,13 @@
       "label": "build-all",
       "dependsOn": ["build-web-frontend", "build-solution"],
       "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "build-and-start-azurite",
+      "dependsOn": ["build-all", "start_azurite"],
+      "dependsOrder": "sequence",
       "problemMatcher": [],
       "group": {
         "kind": "build",

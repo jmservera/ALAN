@@ -1,4 +1,6 @@
 {
+  "editor.defaultFormatter": "prettier.prettier-vscode",
+  "editor.formatOnSave": true,
   // Exclude node_modules from file watching
   "files.watcherExclude": {
     "**/node_modules/**": true
@@ -30,5 +32,6 @@
   "typescript.validate.enable": true,
   
   // Exclude node_modules from problems view
-  "problems.autoReveal": true
+  "problems.autoReveal": true,
+  "jest.rootPath": "src/ALAN.Web"
 }

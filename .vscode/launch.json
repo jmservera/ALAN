@@ -41,9 +41,18 @@
   "compounds": [
     {
       "name": "Launch Agent + ChatApi + Web",
-      "configurations": ["C#: Launch ALAN.Agent", "C#: Launch ALAN.ChatApi", "Launch ALAN.Web (Next.js)"],
+      "configurations": [
+        "C#: Launch ALAN.Agent",
+        "C#: Launch ALAN.ChatApi",
+        "Launch ALAN.Web (Next.js)"
+      ],
       "stopAll": true,
-      "preLaunchTask": "build-solution"
+      "preLaunchTask": "build-and-start-azurite",
+      "postDebugTask": "stop_azurite",
+      "presentation": {
+        "default": true,
+        "order": 1
+      }
     }
   ]
 }

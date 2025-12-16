@@ -51,3 +51,9 @@ src/ALAN.Web/wwwroot/lib/
 __azurite_*
 __*__/
 AzuriteConfig
+
+# Azure Developer CLI
+.azure/
+
+# Azure deployment outputs
+*.env.azure

@@ -503,6 +503,201 @@ AGENT_MAX_LOOPS_PER_DAY=4000
 AGENT_MAX_TOKENS_PER_DAY=8000000
 ```
 
+## Azure Infrastructure Deployment
+
+ALAN includes comprehensive Bicep templates for deploying to Azure Container Apps with production-ready infrastructure.
+
+### Infrastructure Overview
+
+The `infra/` directory contains Infrastructure as Code (IaC) templates following Azure Developer CLI (azd) conventions:
+
+**Core Files:**
+- `main.bicep` - Entry point with subscription-level deployment and default parameters
+- `main.parameters.json` - Parameters file supporting environment variables (e.g., `${AZURE_ENV_NAME}`)
+- `resources.bicep` - Main resource deployment orchestrating all Azure resources
+- `abbreviations.json` - Azure resource naming conventions
+- `modules/container-app.bicep` - Reusable Container App module
+
+**Deployed Resources:**
+1. **Virtual Network** with three subnets (infrastructure, private endpoints, container apps)
+2. **Azure Storage Account** (private) with blob containers and queues
+3. **Azure OpenAI** (private) with GPT-4o-mini deployment
+4. **Container Registry** (private) for container images
+5. **Container Apps Environment** with VNet integration
+6. **Three Container Apps**: agent (internal), chatapi (internal), web (public)
+7. **Managed Identity** for secure Azure resource access
+8. **Log Analytics Workspace** for monitoring
+9. **Private DNS Zones** for private endpoint resolution
+
+### Deployment Options
+
+**Using Azure Developer CLI (azd) - Recommended:**
+```bash
+# Initialize environment
+azd init
+
+# Set required parameters
+azd env set AZURE_ENV_NAME dev
+azd env set AZURE_LOCATION eastus
+azd env set AZURE_PRINCIPAL_ID $(az ad signed-in-user show --query id -o tsv)
+
+# Provision infrastructure
+azd provision
+
+# Build and deploy applications
+azd deploy
+```
+
+**Using Azure CLI:**
+```bash
+# Deploy at subscription level
+az deployment sub create \
+  --location eastus \
+  --template-file ./infra/main.bicep \
+  --parameters ./infra/main.parameters.json \
+  --parameters environmentName=dev location=eastus
+```
+
+### Security Architecture
+
+- **Private Endpoints**: Storage and OpenAI accessible only through private endpoints
+- **Network Isolation**: All resources deployed in VNet with controlled access
+- **Managed Identity Authentication**: No connection strings or keys in configuration
+- **Public Access**: Only the web application has public ingress; agent and chatapi are internal
+- **Private DNS Zones**: Automatic DNS resolution for private endpoints
+
+### Configuration Parameters
+
+**Required:**
+- `environmentName` - Environment name (dev, staging, prod)
+- `location` - Azure region (eastus, westus2, etc.)
+
+**Optional Reliability Features:**
+- `enableZoneRedundancy` - Enable zone redundancy for production (default: false)
+- `enableAutoScaling` - Enable Container Apps auto-scaling (default: false)
+- `minReplicas` - Minimum replica count (default: 1)
+- `maxReplicas` - Maximum replica count when auto-scaling (default: 10)
+
+**Application Settings:**
+- `openAiDeploymentName` - OpenAI deployment name (default: gpt-4o-mini)
+- `openAiModelName` - OpenAI model name (default: gpt-4o-mini)
+- `agentMaxLoopsPerDay` - Maximum agent loops per day (default: 4000)
+- `agentMaxTokensPerDay` - Maximum tokens per day (default: 8000000)
+
+### Deployment Outputs
+
+After deployment, use outputs for local development:
+
+```bash
+# Get all outputs with azd
+azd env get-values
+
+# Get specific output with Azure CLI
+az deployment group show \
+  --resource-group rg-alan-dev \
+  --name resources-dev \
+  --query properties.outputs.AZURE_OPENAI_ENDPOINT.value
+```
+
+**Key Outputs:**
+- `AZURE_OPENAI_ENDPOINT` - Set in local `.env`
+- `AZURE_STORAGE_CONNECTION_STRING` - Set in local `.env`
+- `WEB_APP_URL` - Public web application URL
+- `AZURE_MANAGED_IDENTITY_CLIENT_ID` - For managed identity testing
+
+### Using Azure Verified Modules (AVM)
+
+The infrastructure uses AVM modules for these resources:
+- `br/public:avm/res/managed-identity/user-assigned-identity` - Managed Identity
+- `br/public:avm/res/operational-insights/workspace` - Log Analytics
+- `br/public:avm/res/network/virtual-network` - Virtual Network
+- `br/public:avm/res/storage/storage-account` - Storage Account
+- `br/public:avm/res/network/private-dns-zone` - Private DNS Zones
+- `br/public:avm/res/cognitive-services/account` - Azure OpenAI
+- `br/public:avm/res/container-registry/registry` - Container Registry
+- `br/public:avm/res/app/managed-environment` - Container Apps Environment
+
+AVM modules follow Microsoft best practices and are maintained by the Azure team.
+
+### CI/CD Integration
+
+**Azure DevOps Pipeline:**
+- Template available at `.azdo/azure-pipelines.yml`
+- Builds .NET projects and Next.js web app
+- Builds and pushes container images
+- Deploys infrastructure using Bicep templates
+- Separate dev and prod stages
+
+**GitHub Actions:**
+- Configure with azd workflows using `azure.yaml`
+- Supports automatic deployment on push to main/develop branches
+
+### Building Container Images for Azure
+
+After infrastructure deployment, build and push images to Azure Container Registry:
+
+```bash
+# Login to ACR
+az acr login --name <registry-name>
+
+# Option 1: Build locally and push
+docker build -f Dockerfile.agent -t <registry>.azurecr.io/alan-agent:latest .
+docker push <registry>.azurecr.io/alan-agent:latest
+
+docker build -f Dockerfile.chatapi -t <registry>.azurecr.io/alan-chatapi:latest .
+docker push <registry>.azurecr.io/alan-chatapi:latest
+
+docker build -f Dockerfile.web -t <registry>.azurecr.io/alan-web:latest .
+docker push <registry>.azurecr.io/alan-web:latest
+
+# Option 2: Use ACR build tasks (recommended)
+az acr build --registry <registry> --image alan-agent:latest -f Dockerfile.agent .
+az acr build --registry <registry> --image alan-chatapi:latest -f Dockerfile.chatapi .
+az acr build --registry <registry> --image alan-web:latest -f Dockerfile.web .
+```
+
+### Cost Estimation
+
+**Development Environment (~$100-300/month):**
+- Container Apps (3 apps, 0.5 vCPU, 1GB each): ~$30-50
+- Storage Account (LRS): ~$5-10
+- Azure OpenAI (gpt-4o-mini, 100K TPM): ~$50-200 (usage-based)
+- Virtual Network: ~$0
+- Log Analytics: ~$10-20
+- Container Registry (Basic): ~$5
+
+**Production Environment** with zone redundancy and auto-scaling will cost more.
+
+### Infrastructure Best Practices
+
+1. **Use managed identity** - Avoid connection strings with secrets in production
+2. **Enable zone redundancy** - For production deployments (`enableZoneRedundancy=true`)
+3. **Configure auto-scaling** - Based on workload patterns (`enableAutoScaling=true`)
+4. **Monitor costs** - Set up Azure Cost Management alerts
+5. **Review logs** - Use Log Analytics for troubleshooting and monitoring
+6. **Keep images updated** - Regularly rebuild and push container images
+7. **Test in dev first** - Always validate infrastructure changes in development
+
+### Troubleshooting Infrastructure
+
+**Container App not starting:**
+- Check Container Apps logs in Azure Portal
+- Verify managed identity has Storage and OpenAI permissions
+- Ensure container images are pushed to ACR
+- Validate environment variables are set correctly
+
+**Private endpoint issues:**
+- Verify private endpoints are in "Approved" state
+- Check Private DNS zones are linked to VNet
+- Ensure Container Apps subnet has correct delegations
+
+**Access denied errors:**
+- Verify managed identity role assignments on Storage and OpenAI
+- Check AZURE_CLIENT_ID environment variable is set in Container Apps
+- Ensure network access is allowed from Container Apps subnet
+
+For detailed infrastructure documentation, see `infra/README.md`.
+
 ## Quick Reference
 
 - **Agent Loop Interval**: 5 seconds (configurable in `AutonomousAgent`)

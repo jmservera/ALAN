@@ -27,8 +27,32 @@ variables:
     value: '$(Build.BuildId)'
 
 stages:
+- stage: SecurityScan
+  displayName: Security Scanning
+  jobs:
+  - job: InfrastructureSecurity
+    displayName: Scan Bicep Templates with Checkov
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: UsePythonVersion@0
+      displayName: 'Use Python 3.12'
+      inputs:
+        versionSpec: '3.12'
+    
+    - script: |
+        pip install checkov
+      displayName: 'Install Checkov'
+    
+    - script: |
+        ./scripts/security-check.sh
+      displayName: 'Run Checkov Security Scan'
+      continueOnError: false
+
 - stage: Build
   displayName: Build and Test
+  dependsOn: SecurityScan
+  condition: succeeded()
   jobs:
   - job: BuildDotNet
     displayName: Build .NET Projects

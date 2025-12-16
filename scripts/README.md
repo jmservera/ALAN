@@ -4,6 +4,41 @@ This directory contains helper scripts for deploying and managing ALAN infrastru
 
 ## Scripts
 
+### `security-check.sh`
+
+A security scanning script that runs Checkov on Bicep templates to detect security issues.
+
+**Features:**
+- ✓ Scans all Bicep templates in `infra/` directory
+- ✓ Uses Checkov security scanning tool
+- ✓ Checks for Azure security best practices
+- ✓ Outputs results in CLI format
+- ✓ Integrates with CI/CD pipelines
+
+**Usage:**
+
+```bash
+# Make executable (first time only)
+chmod +x scripts/security-check.sh
+
+# Run security scan
+./scripts/security-check.sh
+```
+
+The script will:
+1. Check if Checkov is installed
+2. Scan all Bicep templates in the `infra/` directory
+3. Report any security findings
+4. Exit with appropriate status code for CI/CD
+
+**Requirements:**
+- Python 3.x
+- Checkov installed: `pip install checkov`
+
+**Configuration:**
+- Security scanning rules are configured in `.checkov.yml`
+- To skip specific checks, add them to the configuration file
+
 ### `deploy-azure.sh`
 
 An interactive bash script that simplifies the Azure deployment process.

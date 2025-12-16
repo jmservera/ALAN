@@ -304,9 +304,35 @@ Production with zone redundancy and auto-scaling will cost more.
 5. **Network isolation**: Use private endpoints for all services
 6. **Least privilege**: Assign minimum required permissions
 
+### Security Scanning
+
+ALAN includes automated security scanning with Checkov to validate infrastructure templates:
+
+**Run security scan locally:**
+```bash
+./scripts/security-check.sh
+```
+
+**Configuration:**
+- Security rules are configured in `.checkov.yml` at the repository root
+- Checkov scans all Bicep templates for Azure security best practices
+- Integrated into CI/CD pipelines (GitHub Actions and Azure DevOps)
+
+**CI/CD Integration:**
+- GitHub Actions: `.github/workflows/security-scan.yml` runs on every push/PR
+- Azure DevOps: Security scan stage runs before build in `.azdo/azure-pipelines.yml`
+
+**What Checkov validates:**
+- Network security configurations
+- Storage encryption and access controls
+- Identity and access management
+- Resource configuration best practices
+- Compliance with Azure security standards
+
 ## Further Reading
 
 - [Azure Container Apps Documentation](https://learn.microsoft.com/azure/container-apps/)
 - [Azure Verified Modules](https://azure.github.io/Azure-Verified-Modules/)
 - [Azure OpenAI Service](https://learn.microsoft.com/azure/ai-services/openai/)
 - [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/)
+- [Checkov Documentation](https://www.checkov.io/)

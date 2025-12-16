@@ -1,0 +1,55 @@
+name: Infrastructure Security Scan
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'infra/**'
+      - '.checkov.yml'
+      - 'scripts/security-check.sh'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'infra/**'
+      - '.checkov.yml'
+      - 'scripts/security-check.sh'
+  workflow_dispatch:
+
+jobs:
+  security-scan:
+    name: Checkov Security Scan
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      security-events: write
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        
+    - name: Install Checkov
+      run: |
+        pip install checkov
+        
+    - name: Run Checkov Security Scan
+      run: |
+        chmod +x scripts/security-check.sh
+        ./scripts/security-check.sh
+        
+    - name: Upload Checkov results (if available)
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: checkov-results
+        path: checkov-results.sarif
+        if-no-files-found: ignore

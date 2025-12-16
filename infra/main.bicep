@@ -1,0 +1,146 @@
+// Main Bicep template for ALAN deployment
+// This file defines default parameters and orchestrates the main deployment
+
+targetScope = 'subscription'
+
+// ==================================
+// Parameters
+// ==================================
+
+@minLength(1)
+@maxLength(64)
+@description('Name of the environment (e.g., dev, staging, prod)')
+param environmentName string
+
+@minLength(1)
+@description('Primary location for all resources')
+param location string
+
+@description('Name of the resource group (if empty, will be generated)')
+param resourceGroupName string = ''
+
+@description('Id of the principal to assign roles to (e.g., your user id or service principal id)')
+param principalId string = ''
+
+@description('Type of the principal (User, ServicePrincipal, Group)')
+@allowed([
+  'User'
+  'ServicePrincipal'
+  'Group'
+])
+param principalType string = 'User'
+
+// Azure OpenAI Parameters
+@description('Azure OpenAI deployment name (model name)')
+param openAiDeploymentName string = 'gpt-4o-mini'
+
+@description('Azure OpenAI model name')
+param openAiModelName string = 'gpt-4o-mini'
+
+@description('Azure OpenAI model version')
+param openAiModelVersion string = '2024-07-18'
+
+@description('Azure OpenAI model capacity (in thousands of tokens per minute)')
+param openAiModelCapacity int = 100
+
+// Application Parameters
+@description('Maximum loops per day for the agent')
+param agentMaxLoopsPerDay int = 4000
+
+@description('Maximum tokens per day for the agent')
+param agentMaxTokensPerDay int = 8000000
+
+@description('Agent think interval in seconds')
+param agentThinkInterval int = 5
+
+@description('Tags to apply to all resources')
+param tags object = {}
+
+// Optional reliability features
+@description('Enable zone redundancy for production workloads')
+param enableZoneRedundancy bool = false
+
+@description('Enable autoscaling for container apps')
+param enableAutoScaling bool = false
+
+@description('Minimum replica count for container apps')
+param minReplicas int = 1
+
+@description('Maximum replica count for container apps (only used if enableAutoScaling is true)')
+param maxReplicas int = 10
+
+// ==================================
+// Variables
+// ==================================
+
+var abbrs = loadJsonContent('./abbreviations.json')
+var generatedResourceGroupName = !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
+var commonTags = union(tags, {
+  'azd-env-name': environmentName
+  environment: environmentName
+  project: 'ALAN'
+})
+
+// ==================================
+// Resources
+// ==================================
+
+// Resource Group
+resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
+  name: generatedResourceGroupName
+  location: location
+  tags: commonTags
+}
+
+// Main deployment
+module resources './resources.bicep' = {
+  name: 'resources-${environmentName}'
+  scope: rg
+  params: {
+    environmentName: environmentName
+    location: location
+    principalId: principalId
+    principalType: principalType
+    openAiDeploymentName: openAiDeploymentName
+    openAiModelName: openAiModelName
+    openAiModelVersion: openAiModelVersion
+    openAiModelCapacity: openAiModelCapacity
+    agentMaxLoopsPerDay: agentMaxLoopsPerDay
+    agentMaxTokensPerDay: agentMaxTokensPerDay
+    agentThinkInterval: agentThinkInterval
+    enableZoneRedundancy: enableZoneRedundancy
+    enableAutoScaling: enableAutoScaling
+    minReplicas: minReplicas
+    maxReplicas: maxReplicas
+    tags: commonTags
+  }
+}
+
+// ==================================
+// Outputs
+// ==================================
+
+output AZURE_LOCATION string = location
+output AZURE_RESOURCE_GROUP string = rg.name
+output AZURE_TENANT_ID string = tenant().tenantId
+output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
+
+// Azure OpenAI outputs for local development
+output AZURE_OPENAI_ENDPOINT string = resources.outputs.openAiEndpoint
+output AZURE_OPENAI_DEPLOYMENT string = openAiDeploymentName
+
+// Storage outputs for local development
+output AZURE_STORAGE_ACCOUNT_NAME string = resources.outputs.storageAccountName
+output AZURE_STORAGE_CONNECTION_STRING string = resources.outputs.storageConnectionString
+
+// Container Apps outputs
+output WEB_APP_URL string = resources.outputs.webAppUrl
+output CHATAPI_URL string = resources.outputs.chatApiUrl
+
+// Identity outputs
+output AZURE_MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.managedIdentityClientId
+output AZURE_MANAGED_IDENTITY_PRINCIPAL_ID string = resources.outputs.managedIdentityPrincipalId
+
+// Container Registry outputs
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryEndpoint
+output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName

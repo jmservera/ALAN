@@ -1,0 +1,212 @@
+# Azure DevOps Pipeline for ALAN
+# This pipeline builds, tests, and deploys ALAN to Azure Container Apps
+
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+  paths:
+    exclude:
+    - docs/*
+    - README.md
+    - .github/*
+
+variables:
+  - name: azureServiceConnection
+    value: 'azure-service-connection' # Update with your service connection name
+  - name: containerRegistryServiceConnection
+    value: 'acr-service-connection' # Update with your ACR service connection name
+  - name: dockerfilePath.agent
+    value: '$(Build.SourcesDirectory)/Dockerfile.agent'
+  - name: dockerfilePath.chatapi
+    value: '$(Build.SourcesDirectory)/Dockerfile.chatapi'
+  - name: dockerfilePath.web
+    value: '$(Build.SourcesDirectory)/Dockerfile.web'
+  - name: tag
+    value: '$(Build.BuildId)'
+
+stages:
+- stage: Build
+  displayName: Build and Test
+  jobs:
+  - job: BuildDotNet
+    displayName: Build .NET Projects
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use .NET 8.0'
+      inputs:
+        version: '8.0.x'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Restore dependencies'
+      inputs:
+        command: 'restore'
+        projects: '**/*.csproj'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Build solution'
+      inputs:
+        command: 'build'
+        projects: '**/*.csproj'
+        arguments: '--configuration Release --no-restore'
+    
+    - task: DotNetCoreCLI@2
+      displayName: 'Run tests'
+      inputs:
+        command: 'test'
+        projects: '**/tests/**/*.csproj'
+        arguments: '--configuration Release --no-build --verbosity normal'
+
+  - job: BuildNode
+    displayName: Build Next.js Web App
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: NodeTool@0
+      displayName: 'Use Node.js 20.x'
+      inputs:
+        versionSpec: '20.x'
+    
+    - script: |
+        cd src/ALAN.Web
+        npm ci
+        npm run build
+      displayName: 'Install dependencies and build'
+
+- stage: BuildContainers
+  displayName: Build Container Images
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: BuildImages
+    displayName: Build and Push Container Images
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - task: Docker@2
+      displayName: 'Build Agent image'
+      inputs:
+        command: 'build'
+        containerRegistry: '$(containerRegistryServiceConnection)'
+        repository: 'alan-agent'
+        dockerfile: '$(dockerfilePath.agent)'
+        tags: |
+          $(tag)
+          latest
+    
+    - task: Docker@2
+      displayName: 'Push Agent image'
+      inputs:
+        command: 'push'
+        containerRegistry: '$(containerRegistryServiceConnection)'
+        repository: 'alan-agent'
+        tags: |
+          $(tag)
+          latest
+    
+    - task: Docker@2
+      displayName: 'Build ChatApi image'
+      inputs:
+        command: 'build'
+        containerRegistry: '$(containerRegistryServiceConnection)'
+        repository: 'alan-chatapi'
+        dockerfile: '$(dockerfilePath.chatapi)'
+        tags: |
+          $(tag)
+          latest
+    
+    - task: Docker@2
+      displayName: 'Push ChatApi image'
+      inputs:
+        command: 'push'
+        containerRegistry: '$(containerRegistryServiceConnection)'
+        repository: 'alan-chatapi'
+        tags: |
+          $(tag)
+          latest
+    
+    - task: Docker@2
+      displayName: 'Build Web image'
+      inputs:
+        command: 'build'
+        containerRegistry: '$(containerRegistryServiceConnection)'
+        repository: 'alan-web'
+        dockerfile: '$(dockerfilePath.web)'
+        tags: |
+          $(tag)
+          latest
+    
+    - task: Docker@2
+      displayName: 'Push Web image'
+      inputs:
+        command: 'push'
+        containerRegistry: '$(containerRegistryServiceConnection)'
+        repository: 'alan-web'
+        tags: |
+          $(tag)
+          latest
+
+- stage: DeployDev
+  displayName: Deploy to Development
+  dependsOn: BuildContainers
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/develop'))
+  jobs:
+  - deployment: DeployInfrastructure
+    displayName: Deploy Infrastructure and Apps
+    environment: 'development'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          
+          - task: AzureCLI@2
+            displayName: 'Deploy Bicep Infrastructure'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az deployment sub create \
+                  --location $(AZURE_LOCATION) \
+                  --template-file ./infra/main.bicep \
+                  --parameters ./infra/main.parameters.json \
+                  --parameters environmentName=dev \
+                  --parameters location=$(AZURE_LOCATION)
+
+- stage: DeployProd
+  displayName: Deploy to Production
+  dependsOn: BuildContainers
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+  - deployment: DeployInfrastructure
+    displayName: Deploy Infrastructure and Apps
+    environment: 'production'
+    pool:
+      vmImage: 'ubuntu-latest'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+          
+          - task: AzureCLI@2
+            displayName: 'Deploy Bicep Infrastructure'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              scriptType: 'bash'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                az deployment sub create \
+                  --location $(AZURE_LOCATION) \
+                  --template-file ./infra/main.bicep \
+                  --parameters ./infra/main.parameters.json \
+                  --parameters environmentName=prod \
+                  --parameters location=$(AZURE_LOCATION) \
+                  --parameters enableZoneRedundancy=true \
+                  --parameters enableAutoScaling=true

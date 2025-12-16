@@ -1,0 +1,79 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: ALAN
+metadata:
+  template: ALAN@0.0.1
+  
+services:
+  agent:
+    project: .
+    language: dotnet
+    host: containerapp
+    docker:
+      path: Dockerfile.agent
+      context: .
+    
+  chatapi:
+    project: .
+    language: dotnet
+    host: containerapp
+    docker:
+      path: Dockerfile.chatapi
+      context: .
+    
+  web:
+    project: .
+    language: js
+    host: containerapp
+    docker:
+      path: Dockerfile.web
+      context: .
+
+hooks:
+  preprovision:
+    posix:
+      shell: sh
+      run: |
+        echo "Preparing infrastructure provisioning..."
+        echo "Environment: ${AZURE_ENV_NAME}"
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Preparing infrastructure provisioning..."
+        Write-Host "Environment: $env:AZURE_ENV_NAME"
+  
+  postprovision:
+    posix:
+      shell: sh
+      run: |
+        echo "Infrastructure provisioned successfully!"
+        echo "Web App URL: $(azd env get-values | grep WEB_APP_URL | cut -d= -f2)"
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Infrastructure provisioned successfully!"
+        $webUrl = azd env get-values | Select-String "WEB_APP_URL" | ForEach-Object { $_.ToString().Split("=")[1] }
+        Write-Host "Web App URL: $webUrl"
+
+  predeploy:
+    posix:
+      shell: sh
+      run: |
+        echo "Building container images..."
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Building container images..."
+
+  postdeploy:
+    posix:
+      shell: sh
+      run: |
+        echo "Deployment completed successfully!"
+        echo "Access your application at: $(azd env get-values | grep WEB_APP_URL | cut -d= -f2)"
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Deployment completed successfully!"
+        $webUrl = azd env get-values | Select-String "WEB_APP_URL" | ForEach-Object { $_.ToString().Split("=")[1] }
+        Write-Host "Access your application at: $webUrl"

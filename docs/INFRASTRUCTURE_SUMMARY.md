@@ -117,11 +117,11 @@ Benefits:
 - Container image building
 - Deployment outputs
 
-#### CI/CD Pipeline
-- **`.azdo/azure-pipelines.yml`** - Azure DevOps pipeline
-- Build and test stages
-- Container image builds
-- Separate dev/prod deployments
+#### GitHub Actions Workflows
+- **`.github/workflows/security-scan.yml`** - Security scanning workflow
+- Automated Checkov scanning on push/PR
+- Validates infrastructure security
+- Runs on infrastructure file changes
 
 ### 6. Documentation
 
@@ -255,13 +255,13 @@ az deployment sub create \
 | `infra/README.md` | 410 | Infrastructure documentation |
 | `infra/abbreviations.json` | 134 | Naming conventions |
 | `azure.yaml` | 71 | azd configuration |
-| `.azdo/azure-pipelines.yml` | 195 | CI/CD pipeline |
+| `.github/workflows/security-scan.yml` | 43 | Security scanning workflow |
 | `scripts/deploy-azure.sh` | 306 | Interactive deployment script |
 | `scripts/README.md` | 186 | Scripts documentation |
 | `docs/AZURE_DEPLOYMENT.md` | 451 | Deployment guide |
 | `.github/copilot-instructions.md` | +220 | Updated with infrastructure section |
 
-**Total**: ~2,794 lines of infrastructure code and documentation
+**Total**: ~2,642 lines of infrastructure code and documentation
 
 ## Key Achievements
 

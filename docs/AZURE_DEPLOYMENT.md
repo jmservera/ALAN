@@ -360,7 +360,7 @@ az group delete --name $RESOURCE_GROUP --yes --no-wait
 
 ## Next Steps
 
-- **Configure CI/CD**: Set up automated deployments using Azure DevOps or GitHub Actions
+- **Configure CI/CD**: Set up automated deployments using GitHub Actions
 - **Enable monitoring**: Configure Application Insights for detailed telemetry
 - **Customize configuration**: Adjust OpenAI models, agent parameters, and scaling rules
 - **Secure secrets**: Move sensitive configuration to Azure Key Vault

@@ -316,11 +316,10 @@ ALAN includes automated security scanning with Checkov to validate infrastructur
 **Configuration:**
 - Security rules are configured in `.checkov.yml` at the repository root
 - Checkov scans all Bicep templates for Azure security best practices
-- Integrated into CI/CD pipelines (GitHub Actions and Azure DevOps)
+- Integrated into CI/CD pipeline with GitHub Actions
 
 **CI/CD Integration:**
-- GitHub Actions: `.github/workflows/security-scan.yml` runs on every push/PR
-- Azure DevOps: Security scan stage runs before build in `.azdo/azure-pipelines.yml`
+- GitHub Actions: `.github/workflows/security-scan.yml` runs on every push/PR to infrastructure files
 
 **What Checkov validates:**
 - Network security configurations

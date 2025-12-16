@@ -621,14 +621,9 @@ AVM modules follow Microsoft best practices and are maintained by the Azure team
 
 ### CI/CD Integration
 
-**Azure DevOps Pipeline:**
-- Template available at `.azdo/azure-pipelines.yml`
-- Builds .NET projects and Next.js web app
-- Builds and pushes container images
-- Deploys infrastructure using Bicep templates
-- Separate dev and prod stages
-
 **GitHub Actions:**
+- Security scanning workflow at `.github/workflows/security-scan.yml`
+- Automated Checkov security validation on infrastructure changes
 - Configure with azd workflows using `azure.yaml`
 - Supports automatic deployment on push to main/develop branches
 

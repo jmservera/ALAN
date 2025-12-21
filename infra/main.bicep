@@ -30,6 +30,9 @@ param principalId string = ''
 ])
 param principalType string = 'User'
 
+@description('IP address to whitelist for accessing Azure services (e.g., your current public IP)')
+param userIpAddress string = ''
+
 // Azure OpenAI Parameters
 @description('Azure OpenAI deployment name (model name)')
 param openAiDeploymentName string = 'gpt-4o-mini'
@@ -101,6 +104,7 @@ module resources './resources.bicep' = {
     location: location
     principalId: principalId
     principalType: principalType
+    userIpAddress: userIpAddress
     openAiDeploymentName: openAiDeploymentName
     openAiModelName: openAiModelName
     openAiModelVersion: openAiModelVersion

@@ -36,11 +36,75 @@ hooks:
       run: |
         echo "Preparing infrastructure provisioning..."
         echo "Environment: ${AZURE_ENV_NAME}"
+
+        # Get current user's Azure AD principal ID
+        echo "Retrieving current user identity..."
+        PRINCIPAL_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null)
+        if [ -z "$PRINCIPAL_ID" ]; then
+          echo "Warning: Could not retrieve user principal ID. Using service principal if available."
+          PRINCIPAL_ID=$(az account show --query user.name -o tsv 2>/dev/null)
+        fi
+
+        if [ -n "$PRINCIPAL_ID" ]; then
+          echo "User Principal ID: $PRINCIPAL_ID"
+          azd env set AZURE_PRINCIPAL_ID "$PRINCIPAL_ID"
+        else
+          echo "Warning: Could not set AZURE_PRINCIPAL_ID"
+        fi
+
+        # Get current user's public IP address
+        echo "Retrieving current user's public IP..."
+        USER_IP=$(dig +short myip.opendns.com @resolver1.opendns.com 2>/dev/null)
+        if [ -z "$USER_IP" ]; then
+          # Fallback to curl if dig is not available
+          USER_IP=$(curl -s https://api.ipify.org 2>/dev/null)
+        fi
+
+        if [ -n "$USER_IP" ]; then
+          echo "User IP Address: $USER_IP"
+          azd env set AZURE_USER_IP "$USER_IP"
+        else
+          echo "Warning: Could not retrieve user IP address"
+        fi
     windows:
       shell: pwsh
       run: |
         Write-Host "Preparing infrastructure provisioning..."
         Write-Host "Environment: $env:AZURE_ENV_NAME"
+
+        # Get current user's Azure AD principal ID
+        Write-Host "Retrieving current user identity..."
+        try {
+          $principalId = az ad signed-in-user show --query id -o tsv 2>$null
+          if ([string]::IsNullOrEmpty($principalId)) {
+            Write-Host "Warning: Could not retrieve user principal ID. Using service principal if available."
+            $principalId = az account show --query user.name -o tsv 2>$null
+          }
+          
+          if (-not [string]::IsNullOrEmpty($principalId)) {
+            Write-Host "User Principal ID: $principalId"
+            azd env set AZURE_PRINCIPAL_ID $principalId
+          } else {
+            Write-Host "Warning: Could not set AZURE_PRINCIPAL_ID"
+          }
+        } catch {
+          Write-Host "Error retrieving principal ID: $_"
+        }
+
+        # Get current user's public IP address
+        Write-Host "Retrieving current user's public IP..."
+        try {
+          $userIp = (Invoke-RestMethod -Uri "https://api.ipify.org" -UseBasicParsing).Trim()
+          
+          if (-not [string]::IsNullOrEmpty($userIp)) {
+            Write-Host "User IP Address: $userIp"
+            azd env set AZURE_USER_IP $userIp
+          } else {
+            Write-Host "Warning: Could not retrieve user IP address"
+          }
+        } catch {
+          Write-Host "Error retrieving IP address: $_"
+        }
 
   postprovision:
     posix:

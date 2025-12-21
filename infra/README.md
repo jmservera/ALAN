@@ -48,11 +48,38 @@ The infrastructure deploys a complete Azure environment with the following compo
 
 ### Security Features
 
-- **Private Endpoints**: All Azure services (Storage, OpenAI) are accessible only through private endpoints
+- **Private Endpoints**: All Azure services (Storage, OpenAI, Container Registry) are accessible only through private endpoints
 - **Network Isolation**: Resources deployed in VNet with controlled access
 - **Managed Identity**: No connection strings or keys stored in configuration
 - **Public Access**: Only the web application has a public endpoint
 - **Private DNS Zones**: Automatic DNS resolution for private endpoints
+- **IP Allowlisting**: Automatically whitelists your current IP address for Azure services during deployment
+- **Role-Based Access**: Automatically assigns your user identity appropriate roles for accessing resources
+
+### Automatic User Identity and IP Retrieval
+
+When using `azd provision`, the infrastructure **automatically**:
+
+1. **Retrieves your Azure AD user identity** and assigns it to `AZURE_PRINCIPAL_ID`
+2. **Detects your current public IP address** and assigns it to `AZURE_USER_IP`
+3. **Adds your IP to allowlists** for Storage Account, Azure OpenAI, and Container Registry
+4. **Grants your user identity** appropriate roles (Storage Contributor, OpenAI User, etc.)
+
+This allows you to access the deployed resources directly from your local machine for testing and management, while maintaining security through private endpoints for production traffic.
+
+The IP allowlisting enables:
+
+- Direct access to Storage Account from Azure Portal and local tools
+- Testing Azure OpenAI endpoints from your development machine
+- Pushing/pulling container images from local Docker
+- Access persists across `azd provision` runs and updates automatically
+
+To manually override these values:
+
+```bash
+azd env set AZURE_PRINCIPAL_ID "your-user-object-id"
+azd env set AZURE_USER_IP "your-public-ip-address"
+```
 
 ### Optional Reliability Features
 
@@ -71,21 +98,36 @@ The infrastructure deploys a complete Azure environment with the following compo
 
 ### Using Azure Developer CLI (azd) - Recommended
 
+The `azd` deployment automatically retrieves your user identity and public IP address during the preprovision phase.
+
 1. **Initialize the environment:**
+
    ```bash
    azd init
    ```
 
-2. **Set environment variables** (or use `.env` file):
+2. **Set required environment variables:**
+
    ```bash
    azd env set AZURE_ENV_NAME dev
    azd env set AZURE_LOCATION eastus
-   azd env set AZURE_PRINCIPAL_ID $(az ad signed-in-user show --query id -o tsv)
    ```
 
+   > **Note**: You don't need to manually set `AZURE_PRINCIPAL_ID` or `AZURE_USER_IP` - these are automatically detected during provisioning!
+
 3. **Provision infrastructure:**
+
    ```bash
    azd provision
+   ```
+
+   During provisioning, you'll see output like:
+
+   ```
+   Retrieving current user identity...
+   User Principal ID: 12345678-1234-1234-1234-123456789abc
+   Retrieving current user's public IP...
+   User IP Address: 203.0.113.42
    ```
 
 4. **Deploy applications** (after building container images):
@@ -96,11 +138,13 @@ The infrastructure deploys a complete Azure environment with the following compo
 ### Using Azure CLI
 
 1. **Create a resource group:**
+
    ```bash
    az group create --name rg-alan-dev --location eastus
    ```
 
 2. **Deploy the infrastructure:**
+
    ```bash
    az deployment group create \
      --resource-group rg-alan-dev \
@@ -121,42 +165,43 @@ The infrastructure deploys a complete Azure environment with the following compo
 
 ### Required Parameters
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
+| Parameter         | Description             | Example                  |
+| ----------------- | ----------------------- | ------------------------ |
 | `environmentName` | Name of the environment | `dev`, `staging`, `prod` |
-| `location` | Azure region | `eastus`, `westus2` |
+| `location`        | Azure region            | `eastus`, `westus2`      |
 
 ### Optional Parameters
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `principalId` | (empty) | Your Azure AD user/service principal ID for role assignments |
-| `principalType` | `User` | Type of principal: `User`, `ServicePrincipal`, or `Group` |
-| `openAiDeploymentName` | `gpt-4o-mini` | Name for the OpenAI deployment |
-| `openAiModelName` | `gpt-4o-mini` | OpenAI model to deploy |
-| `openAiModelVersion` | `2024-07-18` | Model version |
-| `openAiModelCapacity` | `100` | Capacity in thousands of tokens per minute |
-| `agentMaxLoopsPerDay` | `4000` | Maximum agent loops per day |
-| `agentMaxTokensPerDay` | `8000000` | Maximum tokens per day |
-| `agentThinkInterval` | `5` | Seconds between agent thoughts |
-| `enableZoneRedundancy` | `false` | Enable zone redundancy (production) |
-| `enableAutoScaling` | `false` | Enable auto-scaling for Container Apps |
-| `minReplicas` | `1` | Minimum replica count |
-| `maxReplicas` | `10` | Maximum replica count (when auto-scaling) |
+| Parameter              | Default         | Description                                                  |
+| ---------------------- | --------------- | ------------------------------------------------------------ |
+| `principalId`          | (auto-detected) | Your Azure AD user/service principal ID for role assignments |
+| `principalType`        | `User`          | Type of principal: `User`, `ServicePrincipal`, or `Group`    |
+| `userIpAddress`        | (auto-detected) | Your public IP address to whitelist for Azure services       |
+| `openAiDeploymentName` | `gpt-4o-mini`   | Name for the OpenAI deployment                               |
+| `openAiModelName`      | `gpt-4o-mini`   | OpenAI model to deploy                                       |
+| `openAiModelVersion`   | `2024-07-18`    | Model version                                                |
+| `openAiModelCapacity`  | `100`           | Capacity in thousands of tokens per minute                   |
+| `agentMaxLoopsPerDay`  | `4000`          | Maximum agent loops per day                                  |
+| `agentMaxTokensPerDay` | `8000000`       | Maximum tokens per day                                       |
+| `agentThinkInterval`   | `5`             | Seconds between agent thoughts                               |
+| `enableZoneRedundancy` | `false`         | Enable zone redundancy (production)                          |
+| `enableAutoScaling`    | `false`         | Enable auto-scaling for Container Apps                       |
+| `minReplicas`          | `1`             | Minimum replica count                                        |
+| `maxReplicas`          | `10`            | Maximum replica count (when auto-scaling)                    |
 
 ## Outputs
 
 After deployment, the following outputs are available for local development:
 
-| Output | Description | Usage |
-|--------|-------------|-------|
-| `AZURE_OPENAI_ENDPOINT` | OpenAI endpoint URL | Set in `.env` |
-| `AZURE_OPENAI_DEPLOYMENT` | Deployment name | Set in `.env` |
-| `AZURE_STORAGE_ACCOUNT_NAME` | Storage account name | For connection string |
-| `AZURE_STORAGE_CONNECTION_STRING` | Full connection string | Set in `.env` |
-| `WEB_APP_URL` | Public web application URL | Access the UI |
-| `CHATAPI_URL` | Internal ChatAPI URL | For testing |
-| `AZURE_MANAGED_IDENTITY_CLIENT_ID` | Managed identity client ID | For local testing |
+| Output                             | Description                | Usage                 |
+| ---------------------------------- | -------------------------- | --------------------- |
+| `AZURE_OPENAI_ENDPOINT`            | OpenAI endpoint URL        | Set in `.env`         |
+| `AZURE_OPENAI_DEPLOYMENT`          | Deployment name            | Set in `.env`         |
+| `AZURE_STORAGE_ACCOUNT_NAME`       | Storage account name       | For connection string |
+| `AZURE_STORAGE_CONNECTION_STRING`  | Full connection string     | Set in `.env`         |
+| `WEB_APP_URL`                      | Public web application URL | Access the UI         |
+| `CHATAPI_URL`                      | Internal ChatAPI URL       | For testing           |
+| `AZURE_MANAGED_IDENTITY_CLIENT_ID` | Managed identity client ID | For local testing     |
 
 ### Using Outputs for Local Development
 
@@ -174,6 +219,7 @@ az deployment group show \
 ```
 
 Example `.env` configuration from outputs:
+
 ```bash
 AZURE_OPENAI_ENDPOINT="https://cog-alan-dev-abc123.openai.azure.com/"
 AZURE_OPENAI_DEPLOYMENT="gpt-4o-mini"
@@ -197,6 +243,7 @@ infra/
 ## Azure Verified Modules (AVM)
 
 This infrastructure uses Azure Verified Modules for the following resources:
+
 - Managed Identity
 - Log Analytics Workspace
 - Virtual Network
@@ -211,6 +258,7 @@ These modules follow Microsoft best practices and are maintained by the Azure te
 ## Development vs Production
 
 ### Development Configuration
+
 ```bash
 azd env set ENABLE_ZONE_REDUNDANCY false
 azd env set ENABLE_AUTO_SCALING false
@@ -218,6 +266,7 @@ azd env set MIN_REPLICAS 1
 ```
 
 ### Production Configuration
+
 ```bash
 azd env set ENABLE_ZONE_REDUNDANCY true
 azd env set ENABLE_AUTO_SCALING true
@@ -255,6 +304,7 @@ az acr build --registry <registry-name> --image alan-web:latest -f Dockerfile.we
 ## Monitoring
 
 Access logs and metrics through:
+
 - **Azure Portal**: Navigate to Container Apps → Logs
 - **Log Analytics**: Query logs using KQL
 - **Application Insights**: Enable for detailed telemetry (optional)
@@ -283,6 +333,7 @@ Access logs and metrics through:
 ## Cost Estimation
 
 Approximate monthly costs for a development environment:
+
 - Container Apps Environment: ~$0
 - Container Apps (3 apps, 0.5 vCPU, 1GB each): ~$30-50
 - Storage Account (LRS): ~$5-10
@@ -309,19 +360,23 @@ Production with zone redundancy and auto-scaling will cost more.
 ALAN includes automated security scanning with Checkov to validate infrastructure templates:
 
 **Run security scan locally:**
+
 ```bash
 ./scripts/security-check.sh
 ```
 
 **Configuration:**
+
 - Security rules are configured in `.checkov.yml` at the repository root
 - Checkov scans all Bicep templates for Azure security best practices
 - Integrated into CI/CD pipeline with GitHub Actions
 
 **CI/CD Integration:**
+
 - GitHub Actions: `.github/workflows/security-scan.yml` runs on every push/PR to infrastructure files
 
 **What Checkov validates:**
+
 - Network security configurations
 - Storage encryption and access controls
 - Identity and access management

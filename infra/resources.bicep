@@ -19,6 +19,9 @@ param principalId string
 @description('Type of the principal')
 param principalType string
 
+@description('IP address to whitelist for accessing Azure services')
+param userIpAddress string
+
 // Azure OpenAI Parameters
 param openAiDeploymentName string
 param openAiModelName string
@@ -133,6 +136,12 @@ module storage 'br/public:avm/res/storage/storage-account:0.14.3' = {
     networkAcls: {
       bypass: 'AzureServices'
       defaultAction: 'Deny'
+      ipRules: !empty(userIpAddress) ? [
+        {
+          value: userIpAddress
+          action: 'Allow'
+        }
+      ] : []
     }
     blobServices: {
       containers: [
@@ -278,6 +287,11 @@ module openai 'br/public:avm/res/cognitive-services/account:0.9.1' = {
     networkAcls: {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
+      ipRules: !empty(userIpAddress) ? [
+        {
+          value: userIpAddress
+        }
+      ] : []
     }
     deployments: [
       {
@@ -338,6 +352,12 @@ module containerRegistry 'br/public:avm/res/container-registry/registry:0.7.1' =
     acrSku: 'Premium' // Basic SKU doesn't support private endpoints
     publicNetworkAccess: 'Disabled'
     networkRuleBypassOptions: 'AzureServices'
+    networkRuleSetIpRules: !empty(userIpAddress) ? [
+      {
+        value: userIpAddress
+        action: 'Allow'
+      }
+    ] : []
     roleAssignments: [
       {
         principalId: managedIdentity.outputs.principalId

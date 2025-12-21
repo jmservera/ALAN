@@ -4,16 +4,20 @@
 framework:
   - bicep
   - arm
-
+  - dockerfile
+  - yaml
+  - github_actions
 # Directories to scan
 directory:
-  - infra/
+  - .
 
 # Skip downloading external checks (for offline scanning)
 skip-download: true
 
 # Output format
-output: cli
+output: [cli, junitxml, sarif]
+
+output-file-path: console,checkov_report.xml,checkov_report.sarif
 
 # Compact output (less verbose)
 compact: true

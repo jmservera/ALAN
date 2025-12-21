@@ -64,11 +64,8 @@ echo ""
 # Use --skip-download to work offline
 # Use --framework bicep to scan Bicep files
 checkov \
-    --directory infra/ \
-    --framework bicep \
-    --skip-download \
-    --compact \
-    --output cli
+    --config-file .checkov.yml \
+    --compact
 
 exit_code=$?
 

@@ -1,26 +1,26 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
-name: ALAN
+name: alan
 metadata:
-  template: ALAN@0.0.1
-  
+  template: alan@0.0.1
+
 services:
   agent:
-    project: .
+    project: src/ALAN.Agent/ALAN.Agent.csproj
     language: dotnet
     host: containerapp
     docker:
       path: Dockerfile.agent
       context: .
-    
+
   chatapi:
-    project: .
+    project: src/ALAN.ChatApi/ALAN.ChatApi.csproj
     language: dotnet
     host: containerapp
     docker:
       path: Dockerfile.chatapi
       context: .
-    
+
   web:
     project: .
     language: js
@@ -41,7 +41,7 @@ hooks:
       run: |
         Write-Host "Preparing infrastructure provisioning..."
         Write-Host "Environment: $env:AZURE_ENV_NAME"
-  
+
   postprovision:
     posix:
       shell: sh

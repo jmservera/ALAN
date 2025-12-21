@@ -57,3 +57,7 @@ AzuriteConfig
 
 # Azure deployment outputs
 *.env.azure
+
+.venv
+results.sarif
+checkov_report.*

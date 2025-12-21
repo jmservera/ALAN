@@ -102,12 +102,8 @@ module vnet 'br/public:avm/res/network/virtual-network:0.5.2' = {
         name: 'infrastructure-subnet'
         addressPrefix: infrastructureSubnetAddressPrefix
         serviceEndpoints: [
-          {
-            service: 'Microsoft.Storage'
-          }
-          {
-            service: 'Microsoft.CognitiveServices'
-          }
+          'Microsoft.Storage'
+          'Microsoft.CognitiveServices'
         ]
       }
       {
@@ -118,14 +114,6 @@ module vnet 'br/public:avm/res/network/virtual-network:0.5.2' = {
       {
         name: 'container-apps-subnet'
         addressPrefix: containerAppsSubnetAddressPrefix
-        delegations: [
-          {
-            name: 'Microsoft.App.environments'
-            properties: {
-              serviceName: 'Microsoft.App/environments'
-            }
-          }
-        ]
       }
     ]
   }
@@ -347,7 +335,7 @@ module containerRegistry 'br/public:avm/res/container-registry/registry:0.7.1' =
     name: containerRegistryName
     location: location
     tags: tags
-    acrSku: 'Basic'
+    acrSku: 'Premium' // Basic SKU doesn't support private endpoints
     publicNetworkAccess: 'Disabled'
     networkRuleBypassOptions: 'AzureServices'
     roleAssignments: [
@@ -368,7 +356,7 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.8.2
     location: location
     tags: tags
     logAnalyticsWorkspaceResourceId: logAnalytics.outputs.resourceId
-    infrastructureSubnetResourceId: vnet.outputs.subnetResourceIds[2] // container-apps-subnet
+    infrastructureSubnetId: vnet.outputs.subnetResourceIds[2] // container-apps-subnet
     internal: false // false to allow public access to web app
     zoneRedundant: enableZoneRedundancy
   }
@@ -516,7 +504,8 @@ output managedIdentityPrincipalId string = managedIdentity.outputs.principalId
 
 // Storage outputs
 output storageAccountName string = storage.outputs.name
-output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.name};AccountKey=${storage.outputs.primaryKey};EndpointSuffix=${environment().suffixes.storage}'
+// Note: Connection string with access key not available when using private endpoints with managed identity
+output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.name};EndpointSuffix=${environment().suffixes.storage}'
 
 // OpenAI outputs
 output openAiEndpoint string = openai.outputs.endpoint

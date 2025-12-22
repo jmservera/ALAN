@@ -572,7 +572,7 @@ output managedIdentityPrincipalId string = managedIdentity.outputs.principalId
 
 // Storage outputs
 output storageAccountName string = storage.outputs.name
-// Note: Connection string with access key not available when using private endpoints with managed identity
+// Note: Managed identity connection string (no AccountKey); storage access keys are not available when using private endpoints
 output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.name};EndpointSuffix=${environment().suffixes.storage}'
 
 // OpenAI outputs

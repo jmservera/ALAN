@@ -1,6 +1,7 @@
 using ALAN.Shared.Services.Resilience;
 using Azure;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Polly;
 using Xunit;
@@ -20,19 +21,32 @@ public class ResiliencePolicyTests
     public async Task CreateStorageRetryPipeline_RetriesOnThrottling()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object, fakeTimeProvider);
         int attemptCount = 0;
 
-        // Act
-        var result = await pipeline.ExecuteAsync(async ct =>
+        // Act - Execute pipeline in background task
+        var executeTask = Task.Run(async () =>
         {
-            attemptCount++;
-            if (attemptCount < 3)
+            return await pipeline.ExecuteAsync(async ct =>
             {
-                throw new RequestFailedException(429, "Too Many Requests");
-            }
-            return await Task.FromResult(42);
+                attemptCount++;
+                if (attemptCount < 3)
+                {
+                    throw new RequestFailedException(429, "Too Many Requests");
+                }
+                return await Task.FromResult(42);
+            });
         });
+
+        // Advance time to trigger retries without actual delays
+        while (!executeTask.IsCompleted && attemptCount < 3)
+        {
+            await Task.Delay(10); // Small delay to let execution progress
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(10)); // Jump forward in fake time
+        }
+
+        var result = await executeTask;
 
         // Assert
         Assert.Equal(42, result);
@@ -43,19 +57,32 @@ public class ResiliencePolicyTests
     public async Task CreateStorageRetryPipeline_RetriesOnServiceUnavailable()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object, fakeTimeProvider);
         int attemptCount = 0;
 
-        // Act
-        var result = await pipeline.ExecuteAsync(async ct =>
+        // Act - Execute pipeline in background task
+        var executeTask = Task.Run(async () =>
         {
-            attemptCount++;
-            if (attemptCount < 2)
+            return await pipeline.ExecuteAsync(async ct =>
             {
-                throw new RequestFailedException(503, "Service Unavailable");
-            }
-            return await Task.FromResult(100);
+                attemptCount++;
+                if (attemptCount < 2)
+                {
+                    throw new RequestFailedException(503, "Service Unavailable");
+                }
+                return await Task.FromResult(100);
+            });
         });
+
+        // Advance time to trigger retries
+        while (!executeTask.IsCompleted && attemptCount < 2)
+        {
+            await Task.Delay(10);
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(5));
+        }
+
+        var result = await executeTask;
 
         // Assert
         Assert.Equal(100, result);
@@ -66,18 +93,28 @@ public class ResiliencePolicyTests
     public async Task CreateStorageRetryPipeline_FailsAfterMaxRetries()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object, fakeTimeProvider);
         int attemptCount = 0;
 
         // Act & Assert
-        await Assert.ThrowsAsync<RequestFailedException>(async () =>
+        var executeTask = Task.Run(async () =>
         {
-            await pipeline.ExecuteAsync<int>(async ct =>
+            await pipeline.ExecuteAsync<int>(ct =>
             {
                 attemptCount++;
                 throw new RequestFailedException(503, "Service Unavailable");
             });
         });
+
+        // Advance time to trigger all retries
+        while (!executeTask.IsCompleted && attemptCount < 5)
+        {
+            await Task.Delay(10);
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(10));
+        }
+
+        await Assert.ThrowsAsync<RequestFailedException>(async () => await executeTask);
 
         // Should try: initial + 3 retries = 4 total attempts
         Assert.Equal(4, attemptCount);
@@ -93,7 +130,7 @@ public class ResiliencePolicyTests
         // Act & Assert
         await Assert.ThrowsAsync<RequestFailedException>(async () =>
         {
-            await pipeline.ExecuteAsync<int>(async ct =>
+            await pipeline.ExecuteAsync<int>(ct =>
             {
                 attemptCount++;
                 throw new RequestFailedException(404, "Not Found");
@@ -108,19 +145,32 @@ public class ResiliencePolicyTests
     public async Task CreateOpenAIRetryPipeline_RetriesOnRateLimit()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateOpenAIRetryPipeline<string>(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateOpenAIRetryPipeline<string>(_mockLogger.Object, fakeTimeProvider);
         int attemptCount = 0;
 
-        // Act
-        var result = await pipeline.ExecuteAsync(async ct =>
+        // Act - Execute pipeline in background task
+        var executeTask = Task.Run(async () =>
         {
-            attemptCount++;
-            if (attemptCount < 3)
+            return await pipeline.ExecuteAsync(async ct =>
             {
-                throw new RequestFailedException(429, "Rate limit exceeded");
-            }
-            return await Task.FromResult("success");
+                attemptCount++;
+                if (attemptCount < 3)
+                {
+                    throw new RequestFailedException(429, "Rate limit exceeded");
+                }
+                return await Task.FromResult("success");
+            });
         });
+
+        // Advance time to trigger retries
+        while (!executeTask.IsCompleted && attemptCount < 3)
+        {
+            await Task.Delay(10);
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(10));
+        }
+
+        var result = await executeTask;
 
         // Assert
         Assert.Equal("success", result);
@@ -131,18 +181,28 @@ public class ResiliencePolicyTests
     public async Task CreateOpenAIRetryPipeline_HasMoreRetriesThanStorage()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateOpenAIRetryPipeline<int>(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateOpenAIRetryPipeline<int>(_mockLogger.Object, fakeTimeProvider);
         int attemptCount = 0;
 
         // Act & Assert
-        await Assert.ThrowsAsync<RequestFailedException>(async () =>
+        var executeTask = Task.Run(async () =>
         {
-            await pipeline.ExecuteAsync<int>(async ct =>
+            await pipeline.ExecuteAsync<int>(ct =>
             {
                 attemptCount++;
                 throw new RequestFailedException(429, "Rate limit");
             });
         });
+
+        // Advance time to trigger all retries
+        while (!executeTask.IsCompleted && attemptCount < 7)
+        {
+            await Task.Delay(10);
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(10));
+        }
+
+        await Assert.ThrowsAsync<RequestFailedException>(async () => await executeTask);
 
         // OpenAI should retry more times (initial + 5 retries = 6 total)
         Assert.Equal(6, attemptCount);
@@ -152,19 +212,32 @@ public class ResiliencePolicyTests
     public async Task CreateStorageRetryPipeline_WithoutGeneric_Succeeds()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline(_mockLogger.Object, fakeTimeProvider);
         int attemptCount = 0;
 
-        // Act
-        await pipeline.ExecuteAsync(async ct =>
+        // Act - Execute pipeline in background task
+        var executeTask = Task.Run(async () =>
         {
-            attemptCount++;
-            if (attemptCount < 2)
+            await pipeline.ExecuteAsync(async ct =>
             {
-                throw new RequestFailedException(503, "Service Unavailable");
-            }
-            await Task.CompletedTask;
+                attemptCount++;
+                if (attemptCount < 2)
+                {
+                    throw new RequestFailedException(503, "Service Unavailable");
+                }
+                await Task.CompletedTask;
+            });
         });
+
+        // Advance time to trigger retries
+        while (!executeTask.IsCompleted && attemptCount < 2)
+        {
+            await Task.Delay(10);
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(5));
+        }
+
+        await executeTask;
 
         // Assert
         Assert.Equal(2, attemptCount);
@@ -174,19 +247,32 @@ public class ResiliencePolicyTests
     public async Task CreateOpenAIRetryPipeline_WithoutGeneric_Succeeds()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateOpenAIRetryPipeline(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateOpenAIRetryPipeline(_mockLogger.Object, fakeTimeProvider);
         int attemptCount = 0;
 
-        // Act
-        await pipeline.ExecuteAsync(async ct =>
+        // Act - Execute pipeline in background task
+        var executeTask = Task.Run(async () =>
         {
-            attemptCount++;
-            if (attemptCount < 2)
+            await pipeline.ExecuteAsync(async ct =>
             {
-                throw new RequestFailedException(429, "Rate limit");
-            }
-            await Task.CompletedTask;
+                attemptCount++;
+                if (attemptCount < 2)
+                {
+                    throw new RequestFailedException(429, "Rate limit");
+                }
+                await Task.CompletedTask;
+            });
         });
+
+        // Advance time to trigger retries
+        while (!executeTask.IsCompleted && attemptCount < 2)
+        {
+            await Task.Delay(10);
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(5));
+        }
+
+        await executeTask;
 
         // Assert
         Assert.Equal(2, attemptCount);
@@ -196,19 +282,32 @@ public class ResiliencePolicyTests
     public async Task CreateStorageRetryPipeline_RetriesOnTimeout()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<string>(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<string>(_mockLogger.Object, fakeTimeProvider);
         int attemptCount = 0;
 
-        // Act
-        var result = await pipeline.ExecuteAsync(async ct =>
+        // Act - Execute pipeline in background task
+        var executeTask = Task.Run(async () =>
         {
-            attemptCount++;
-            if (attemptCount < 2)
+            return await pipeline.ExecuteAsync(async ct =>
             {
-                throw new TimeoutException("Operation timed out");
-            }
-            return await Task.FromResult("completed");
+                attemptCount++;
+                if (attemptCount < 2)
+                {
+                    throw new TimeoutException("Operation timed out");
+                }
+                return await Task.FromResult("completed");
+            });
         });
+
+        // Advance time to trigger retries
+        while (!executeTask.IsCompleted && attemptCount < 2)
+        {
+            await Task.Delay(10);
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(5));
+        }
+
+        var result = await executeTask;
 
         // Assert
         Assert.Equal("completed", result);
@@ -219,19 +318,32 @@ public class ResiliencePolicyTests
     public async Task CreateStorageRetryPipeline_LogsRetryAttempts()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object, fakeTimeProvider);
         int attemptCount = 0;
 
-        // Act
-        await pipeline.ExecuteAsync(async ct =>
+        // Act - Execute pipeline in background task
+        var executeTask = Task.Run(async () =>
         {
-            attemptCount++;
-            if (attemptCount < 2)
+            return await pipeline.ExecuteAsync(async ct =>
             {
-                throw new RequestFailedException(503, "Service Unavailable");
-            }
-            return await Task.FromResult(1);
+                attemptCount++;
+                if (attemptCount < 2)
+                {
+                    throw new RequestFailedException(503, "Service Unavailable");
+                }
+                return await Task.FromResult(1);
+            });
         });
+
+        // Advance time to trigger retries
+        while (!executeTask.IsCompleted && attemptCount < 2)
+        {
+            await Task.Delay(10);
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(5));
+        }
+
+        await executeTask;
 
         // Assert - verify logger was called
         _mockLogger.Verify(
@@ -272,12 +384,13 @@ public class ResiliencePolicyTests
     public async Task CreateStorageRetryPipeline_StopsRetryingOnCancellation()
     {
         // Arrange
-        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object);
+        var fakeTimeProvider = new FakeTimeProvider();
+        var pipeline = ResiliencePolicy.CreateStorageRetryPipeline<int>(_mockLogger.Object, fakeTimeProvider);
         var cts = new CancellationTokenSource();
         int attemptCount = 0;
 
         // Act & Assert
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        var executeTask = Task.Run(async () =>
         {
             await pipeline.ExecuteAsync(async ct =>
             {
@@ -293,6 +406,15 @@ public class ResiliencePolicyTests
                 return await Task.FromResult(1);
             }, cts.Token);
         });
+
+        // Advance time to trigger retry
+        while (!executeTask.IsCompleted && attemptCount < 2)
+        {
+            await Task.Delay(10);
+            fakeTimeProvider.Advance(TimeSpan.FromSeconds(5));
+        }
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await executeTask);
 
         // Should attempt twice max (initial + one retry before cancellation)
         Assert.True(attemptCount <= 2, $"Expected <= 2 attempts but got {attemptCount}");

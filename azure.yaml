@@ -77,20 +77,32 @@ hooks:
         Write-Host "Preparing infrastructure provisioning..."
         Write-Host "Environment: $env:AZURE_ENV_NAME"
 
-        # Get current user's Azure AD principal ID
+        # Get current user's Azure AD principal ID (object ID)
         Write-Host "Retrieving current user identity..."
         try {
+          # First, try to get the signed-in user's object ID
           $principalId = az ad signed-in-user show --query id -o tsv 2>$null
-          if ([string]::IsNullOrEmpty($principalId)) {
-            Write-Host "Warning: Could not retrieve user principal ID. Using service principal if available."
-            $principalId = az account show --query user.name -o tsv 2>$null
+
+          if ([string]::IsNullOrWhiteSpace($principalId)) {
+            Write-Host "User principal ID not found, attempting to resolve service principal identity..."
+
+            # Check if the current context is a service principal
+            $accountUserType = az account show --query user.type -o tsv 2>$null
+            if ($accountUserType -eq "servicePrincipal") {
+              # For service principals, az account show --query user.name returns the appId
+              $spAppId = az account show --query user.name -o tsv 2>$null
+              if (-not [string]::IsNullOrWhiteSpace($spAppId)) {
+                # Resolve the service principal's object ID
+                $principalId = az ad sp show --id $spAppId --query id -o tsv 2>$null
+              }
+            }
           }
-          
-          if (-not [string]::IsNullOrEmpty($principalId)) {
-            Write-Host "User Principal ID: $principalId"
+
+          if (-not [string]::IsNullOrWhiteSpace($principalId)) {
+            Write-Host "Resolved Principal ID (object ID): $principalId"
             azd env set AZURE_PRINCIPAL_ID $principalId
           } else {
-            Write-Host "Warning: Could not set AZURE_PRINCIPAL_ID"
+            Write-Host "Warning: Could not determine an Azure AD principal object ID. AZURE_PRINCIPAL_ID will not be set."
           }
         } catch {
           Write-Host "Error retrieving principal ID: $_"

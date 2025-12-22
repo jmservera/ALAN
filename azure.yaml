@@ -6,28 +6,27 @@ metadata:
 
 services:
   agent:
-    project: src/ALAN.Agent/ALAN.Agent.csproj
+    project: ./src/ALAN.Agent
     language: dotnet
     host: containerapp
     docker:
-      path: Dockerfile.agent
+      path: ../../../Dockerfile.agent
       context: .
 
   chatapi:
-    project: src/ALAN.ChatApi/ALAN.ChatApi.csproj
+    project: src/ALAN.ChatApi
     language: dotnet
     host: containerapp
     docker:
-      path: Dockerfile.chatapi
+      path: ../../../Dockerfile.chatapi
       context: .
-
   web:
-    project: .
+    project: src/ALAN.Web
     language: js
     host: containerapp
     docker:
-      path: Dockerfile.web
-      context: .
+      path: ../../Dockerfile.web
+      context: ../../
 
 hooks:
   preprovision:

@@ -10,18 +10,18 @@ services:
     language: dotnet
     host: containerapp
     docker:
-      path: ../../../Dockerfile.agent
-      context: .
+      path: ../../Dockerfile.agent
+      context: ../../
 
   chatapi:
-    project: src/ALAN.ChatApi
+    project: ./src/ALAN.ChatApi
     language: dotnet
     host: containerapp
     docker:
-      path: ../../../Dockerfile.chatapi
-      context: .
+      path: ../../Dockerfile.chatapi
+      context: ../../
   web:
-    project: src/ALAN.Web
+    project: ./src/ALAN.Web
     language: js
     host: containerapp
     docker:

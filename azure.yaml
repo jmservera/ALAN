@@ -65,6 +65,12 @@ hooks:
         else
           echo "Warning: Could not retrieve user IP address"
         fi
+
+        # Use placeholder images for initial provisioning
+        echo "Setting placeholder container images for initial provisioning..."
+        azd env set AGENT_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+        azd env set CHATAPI_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+        azd env set WEB_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
     windows:
       shell: pwsh
       run: |
@@ -105,17 +111,121 @@ hooks:
           Write-Host "Error retrieving IP address: $_"
         }
 
+        # Use placeholder images for initial provisioning
+        Write-Host "Setting placeholder container images for initial provisioning..."
+        azd env set AGENT_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+        azd env set CHATAPI_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+        azd env set WEB_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+
   postprovision:
     posix:
       shell: sh
       run: |
         echo "Infrastructure provisioned successfully!"
-        echo "Web App URL: $(azd env get-values | grep WEB_APP_URL | cut -d= -f2)"
+
+        # Get resource group and registry name
+        RESOURCE_GROUP=$(azd env get-values | grep AZURE_RESOURCE_GROUP | cut -d= -f2 | tr -d '"')
+        REGISTRY_NAME=$(azd env get-values | grep AZURE_CONTAINER_REGISTRY_NAME | cut -d= -f2 | tr -d '"')
+
+        echo "Resource Group: $RESOURCE_GROUP"
+        echo "Container Registry: $REGISTRY_NAME"
+
+        # Get the packaged image names from azd
+        # These will be available after azd package runs
+        AGENT_IMAGE=$(azd env get-values | grep SERVICE_AGENT_IMAGE_NAME | cut -d= -f2 | tr -d '"')
+        CHATAPI_IMAGE=$(azd env get-values | grep SERVICE_CHATAPI_IMAGE_NAME | cut -d= -f2 | tr -d '"')
+        WEB_IMAGE=$(azd env get-values | grep SERVICE_WEB_IMAGE_NAME | cut -d= -f2 | tr -d '"')
+
+        if [ -n "$AGENT_IMAGE" ] && [ -n "$CHATAPI_IMAGE" ] && [ -n "$WEB_IMAGE" ]; then
+          echo "Updating container apps with real images..."
+          echo "Agent: $AGENT_IMAGE"
+          echo "ChatApi: $CHATAPI_IMAGE"
+          echo "Web: $WEB_IMAGE"
+          
+          # Update container apps with the real images
+          echo "Updating agent container app..."
+          az containerapp update \
+            --name ca-agent-${AZURE_ENV_NAME} \
+            --resource-group $RESOURCE_GROUP \
+            --image ${REGISTRY_NAME}.azurecr.io/${AGENT_IMAGE} \
+            --output none || echo "Warning: Failed to update agent container app"
+          
+          echo "Updating chatapi container app..."
+          az containerapp update \
+            --name ca-chatapi-${AZURE_ENV_NAME} \
+            --resource-group $RESOURCE_GROUP \
+            --image ${REGISTRY_NAME}.azurecr.io/${CHATAPI_IMAGE} \
+            --output none || echo "Warning: Failed to update chatapi container app"
+          
+          echo "Updating web container app..."
+          az containerapp update \
+            --name ca-web-${AZURE_ENV_NAME} \
+            --resource-group $RESOURCE_GROUP \
+            --image ${REGISTRY_NAME}.azurecr.io/${WEB_IMAGE} \
+            --output none || echo "Warning: Failed to update web container app"
+          
+          echo "Container apps updated with real images!"
+        else
+          echo "Note: Real container images not yet available. They will be deployed during 'azd deploy'."
+        fi
+
+        WEB_URL=$(azd env get-values | grep WEB_APP_URL | cut -d= -f2 | tr -d '"')
+        echo "Web App URL: $WEB_URL"
     windows:
       shell: pwsh
       run: |
         Write-Host "Infrastructure provisioned successfully!"
-        $webUrl = azd env get-values | Select-String "WEB_APP_URL" | ForEach-Object { $_.ToString().Split("=")[1] }
+
+        # Get resource group and registry name
+        $envValues = azd env get-values | Out-String
+        $resourceGroup = ($envValues | Select-String "AZURE_RESOURCE_GROUP=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+        $registryName = ($envValues | Select-String "AZURE_CONTAINER_REGISTRY_NAME=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+
+        Write-Host "Resource Group: $resourceGroup"
+        Write-Host "Container Registry: $registryName"
+
+        # Get the packaged image names from azd
+        $agentImage = ($envValues | Select-String "SERVICE_AGENT_IMAGE_NAME=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+        $chatapiImage = ($envValues | Select-String "SERVICE_CHATAPI_IMAGE_NAME=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+        $webImage = ($envValues | Select-String "SERVICE_WEB_IMAGE_NAME=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+
+        if (-not [string]::IsNullOrEmpty($agentImage) -and -not [string]::IsNullOrEmpty($chatapiImage) -and -not [string]::IsNullOrEmpty($webImage)) {
+          Write-Host "Updating container apps with real images..."
+          Write-Host "Agent: $agentImage"
+          Write-Host "ChatApi: $chatapiImage"
+          Write-Host "Web: $webImage"
+          
+          # Update container apps with the real images
+          Write-Host "Updating agent container app..."
+          az containerapp update `
+            --name "ca-agent-$env:AZURE_ENV_NAME" `
+            --resource-group $resourceGroup `
+            --image "$registryName.azurecr.io/$agentImage" `
+            --output none
+          if ($LASTEXITCODE -ne 0) { Write-Host "Warning: Failed to update agent container app" }
+          
+          Write-Host "Updating chatapi container app..."
+          az containerapp update `
+            --name "ca-chatapi-$env:AZURE_ENV_NAME" `
+            --resource-group $resourceGroup `
+            --image "$registryName.azurecr.io/$chatapiImage" `
+            --output none
+          if ($LASTEXITCODE -ne 0) { Write-Host "Warning: Failed to update chatapi container app" }
+          
+          Write-Host "Updating web container app..."
+          az containerapp update `
+            --name "ca-web-$env:AZURE_ENV_NAME" `
+            --resource-group $resourceGroup `
+            --image "$registryName.azurecr.io/$webImage" `
+            --output none
+          if ($LASTEXITCODE -ne 0) { Write-Host "Warning: Failed to update web container app" }
+          
+          Write-Host "Container apps updated with real images!"
+        } else {
+          Write-Host "Note: Real container images not yet available. They will be deployed during 'azd deploy'."
+        }
+
+        $webUrl = ($envValues | Select-String "WEB_APP_URL=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
         Write-Host "Web App URL: $webUrl"
 
   predeploy:

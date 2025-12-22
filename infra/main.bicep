@@ -72,6 +72,16 @@ param minReplicas int = 1
 @description('Maximum replica count for container apps (only used if enableAutoScaling is true)')
 param maxReplicas int = 10
 
+// Container Image Parameters
+@description('Container image for agent service (use mcr.microsoft.com/azuredocs/containerapps-helloworld:latest as placeholder)')
+param agentContainerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
+@description('Container image for chatapi service (use mcr.microsoft.com/azuredocs/containerapps-helloworld:latest as placeholder)')
+param chatApiContainerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
+@description('Container image for web service (use mcr.microsoft.com/azuredocs/containerapps-helloworld:latest as placeholder)')
+param webContainerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+
 // ==================================
 // Variables
 // ==================================
@@ -116,6 +126,9 @@ module resources './resources.bicep' = {
     enableAutoScaling: enableAutoScaling
     minReplicas: minReplicas
     maxReplicas: maxReplicas
+    agentContainerImage: agentContainerImage
+    chatApiContainerImage: chatApiContainerImage
+    webContainerImage: webContainerImage
     tags: commonTags
   }
 }

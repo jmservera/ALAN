@@ -79,7 +79,12 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: name
-          image: '${containerRegistryName}.azurecr.io/${containerImage}'
+          // Support both ACR images and external images (e.g., mcr.microsoft.com for placeholders)
+          // If containerImage starts with a registry domain, use it as-is
+          // Otherwise, prefix with the ACR name
+          image: contains(containerImage, '/') && !startsWith(containerImage, '${containerRegistryName}.azurecr.io')
+            ? containerImage
+            : '${containerRegistryName}.azurecr.io/${containerImage}'
           env: environmentVariables
           resources: {
             cpu: json(cpu)

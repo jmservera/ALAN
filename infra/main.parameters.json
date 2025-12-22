@@ -49,6 +49,15 @@
     },
     "maxReplicas": {
       "value": "${MAX_REPLICAS=10}"
+    },
+    "agentContainerImage": {
+      "value": "${AGENT_CONTAINER_IMAGE=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+    },
+    "chatApiContainerImage": {
+      "value": "${CHATAPI_CONTAINER_IMAGE=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+    },
+    "webContainerImage": {
+      "value": "${WEB_CONTAINER_IMAGE=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
     }
   }
 }

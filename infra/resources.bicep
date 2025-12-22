@@ -39,6 +39,11 @@ param enableAutoScaling bool
 param minReplicas int
 param maxReplicas int
 
+// Container Image Parameters
+param agentContainerImage string
+param chatApiContainerImage string
+param webContainerImage string
+
 @description('Tags to apply to all resources')
 param tags object
 
@@ -117,6 +122,7 @@ module vnet 'br/public:avm/res/network/virtual-network:0.5.2' = {
       {
         name: 'container-apps-subnet'
         addressPrefix: containerAppsSubnetAddressPrefix
+        delegation: 'Microsoft.App/environments'
       }
     ]
   }
@@ -273,6 +279,21 @@ module privateDnsZoneOpenAi 'br/public:avm/res/network/private-dns-zone:0.6.0' =
   }
 }
 
+// Private DNS Zone for Container Registry
+module privateDnsZoneAcr 'br/public:avm/res/network/private-dns-zone:0.6.0' = {
+  name: 'privateDnsZone-acr-${environmentName}'
+  params: {
+    name: 'privatelink.azurecr.io'
+    tags: tags
+    virtualNetworkLinks: [
+      {
+        virtualNetworkResourceId: vnet.outputs.resourceId
+        registrationEnabled: false
+      }
+    ]
+  }
+}
+
 // Azure OpenAI with private endpoint
 module openai 'br/public:avm/res/cognitive-services/account:0.9.1' = {
   name: 'openai-${environmentName}'
@@ -349,15 +370,31 @@ module containerRegistry 'br/public:avm/res/container-registry/registry:0.7.1' =
     name: containerRegistryName
     location: location
     tags: tags
-    acrSku: 'Premium' // Basic SKU doesn't support private endpoints
-    publicNetworkAccess: 'Disabled'
+    acrSku: 'Premium' // Premium SKU required for private endpoints
+    publicNetworkAccess: 'Enabled' // Allow public access for image pull during provisioning and for user IP to push
     networkRuleBypassOptions: 'AzureServices'
+    networkRuleSetDefaultAction: 'Deny' // Deny by default, allow specific IPs
     networkRuleSetIpRules: !empty(userIpAddress) ? [
       {
         value: userIpAddress
         action: 'Allow'
       }
     ] : []
+    exportPolicyStatus: 'enabled' // Required when publicNetworkAccess is Enabled
+    privateEndpoints: [
+      {
+        name: 'pe-${containerRegistryName}'
+        subnetResourceId: vnet.outputs.subnetResourceIds[1] // private-endpoint-subnet
+        service: 'registry'
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            {
+              privateDnsZoneResourceId: privateDnsZoneAcr.outputs.resourceId
+            }
+          ]
+        }
+      }
+    ]
     roleAssignments: [
       {
         principalId: managedIdentity.outputs.principalId
@@ -392,7 +429,7 @@ module agentApp './modules/container-app.bicep' = {
     containerAppsEnvironmentId: containerAppsEnvironment.outputs.resourceId
     managedIdentityId: managedIdentity.outputs.resourceId
     containerRegistryName: containerRegistry.outputs.name
-    containerImage: 'alan-agent:latest'
+    containerImage: agentContainerImage
     containerPort: 0 // No exposed port for agent
     enableIngress: false
     environmentVariables: [
@@ -442,7 +479,7 @@ module chatApiApp './modules/container-app.bicep' = {
     containerAppsEnvironmentId: containerAppsEnvironment.outputs.resourceId
     managedIdentityId: managedIdentity.outputs.resourceId
     containerRegistryName: containerRegistry.outputs.name
-    containerImage: 'alan-chatapi:latest'
+    containerImage: chatApiContainerImage
     containerPort: 5041
     enableIngress: true
     ingressExternal: false // Internal only
@@ -485,7 +522,7 @@ module webApp './modules/container-app.bicep' = {
     containerAppsEnvironmentId: containerAppsEnvironment.outputs.resourceId
     managedIdentityId: managedIdentity.outputs.resourceId
     containerRegistryName: containerRegistry.outputs.name
-    containerImage: 'alan-web:latest'
+    containerImage: webContainerImage
     containerPort: 5269
     enableIngress: true
     ingressExternal: true // Public access

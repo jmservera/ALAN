@@ -4,11 +4,53 @@ This directory contains helper scripts for deploying and managing ALAN infrastru
 
 ## Scripts
 
+### `validate-deployment.sh` ⭐ NEW
+
+A validation script that checks if the container image deployment strategy is correctly configured.
+
+**Features:**
+
+- ✓ Validates Azure CLI and azd installation
+- ✓ Checks environment configuration
+- ✓ Verifies Bicep template parameters for container images
+- ✓ Validates azure.yaml hooks configuration
+- ✓ Checks Dockerfile existence
+- ✓ Verifies placeholder image accessibility
+
+**Usage:**
+
+```bash
+# Run validation before deployment
+./scripts/validate-deployment.sh
+```
+
+The script will:
+
+1. Check all prerequisites are installed
+2. Verify infrastructure files are present
+3. Validate container image parameters in Bicep templates
+4. Check azure.yaml preprovision/postprovision hooks
+5. Confirm Dockerfiles exist
+6. Test placeholder image accessibility
+
+**When to Use:**
+
+- Before running `azd up` for the first time
+- After modifying infrastructure templates
+- When troubleshooting deployment issues
+- As part of CI/CD pre-deployment checks
+
+**Exit Codes:**
+
+- `0` - All validations passed
+- `1` - Validation failed (see error messages)
+
 ### `security-check.sh`
 
 A security scanning script that runs Checkov on Bicep templates to detect security issues.
 
 **Features:**
+
 - ✓ Scans all Bicep templates in `infra/` directory
 - ✓ Uses Checkov security scanning tool
 - ✓ Checks for Azure security best practices
@@ -26,16 +68,19 @@ chmod +x scripts/security-check.sh
 ```
 
 The script will:
+
 1. Check if Checkov is installed
 2. Scan all Bicep templates in the `infra/` directory
 3. Report any security findings
 4. Exit with appropriate status code for CI/CD
 
 **Requirements:**
+
 - Python 3.x
 - Checkov installed: `pip install checkov`
 
 **Configuration:**
+
 - Security scanning rules are configured in `.checkov.yml`
 - To skip specific checks, add them to the configuration file
 
@@ -44,6 +89,7 @@ The script will:
 An interactive bash script that simplifies the Azure deployment process.
 
 **Features:**
+
 - ✓ Prerequisites checking (Azure CLI, Docker, azd)
 - ✓ Interactive configuration
 - ✓ Infrastructure deployment using Bicep templates
@@ -62,6 +108,7 @@ chmod +x scripts/deploy-azure.sh
 ```
 
 The script will:
+
 1. Check prerequisites (Azure CLI, login status, Docker)
 2. Prompt for environment name (dev/staging/prod) and location
 3. Deploy infrastructure using Bicep templates
@@ -70,6 +117,7 @@ The script will:
 6. Save deployment outputs to an environment file
 
 **Requirements:**
+
 - Azure CLI (`az`) installed and configured
 - Logged in to Azure (`az login`)
 - Appropriate Azure subscription permissions
@@ -78,6 +126,7 @@ The script will:
 **Output:**
 
 After successful deployment, you'll get:
+
 - A `.env.{environment}.azure` file with deployment outputs
 - Web application URL
 - Container Registry name
@@ -179,24 +228,29 @@ Documentation:
 ## Manual Deployment
 
 If you prefer manual deployment or need more control, see:
+
 - [Azure Deployment Guide](../docs/AZURE_DEPLOYMENT.md)
 - [Infrastructure README](../infra/README.md)
 
 ## Troubleshooting
 
 **Script fails with "Azure CLI not found":**
+
 - Install Azure CLI: https://learn.microsoft.com/cli/azure/install-azure-cli
 
 **Script fails with "Not logged in to Azure":**
+
 - Run: `az login`
 - Verify: `az account show`
 
 **Container image builds fail:**
+
 - Ensure Docker is running
 - Check Docker daemon is accessible
 - Try using ACR build tasks instead: `az acr build --registry <name> --image <image> -f <Dockerfile> .`
 
 **Container Apps update fails:**
+
 - Container Apps might not exist yet on first deployment
 - Check Container Apps status in Azure Portal
 - Verify images were pushed to ACR successfully
@@ -204,6 +258,7 @@ If you prefer manual deployment or need more control, see:
 ## Contributing
 
 When adding new deployment scripts:
+
 1. Follow the same error handling pattern
 2. Include helpful output messages with colors
 3. Document prerequisites and usage

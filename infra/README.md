@@ -276,7 +276,38 @@ azd env set MAX_REPLICAS 10
 
 ## Building and Pushing Container Images
 
-Before deploying the Container Apps, build and push the Docker images:
+### Understanding the Placeholder Image Strategy
+
+**Important**: The infrastructure uses a **placeholder image strategy** to solve the chicken-and-egg problem of deploying Container Apps before images exist in the registry.
+
+#### How It Works
+
+1. **Initial Provision**: Container Apps are created with Microsoft's public `containerapps-helloworld` image as a placeholder
+2. **Build & Push**: After infrastructure is ready, `azd package` builds and pushes your actual images to the Container Registry
+3. **Update**: Container Apps are automatically updated to use your real images
+
+This is handled automatically by `azd up` or can be done manually with `azd provision` followed by `azd deploy`.
+
+#### The Deployment Flow
+
+```bash
+# Option 1: All-in-one (recommended)
+azd up
+# ├── Provisions with placeholder images
+# ├── Builds and pushes real images
+# └── Updates Container Apps with real images
+
+# Option 2: Step-by-step
+azd provision  # Creates infrastructure with placeholders
+azd package    # Builds and pushes real images
+azd deploy     # Updates Container Apps with real images
+```
+
+For detailed information about this strategy, see [Container Image Deployment Strategy](../docs/CONTAINER_IMAGE_DEPLOYMENT.md).
+
+### Manual Image Build and Push
+
+If you need to manually build and push images (without azd):
 
 ```bash
 # Login to Azure Container Registry
@@ -291,6 +322,16 @@ docker push <registry-name>.azurecr.io/alan-chatapi:latest
 
 docker build -f Dockerfile.web -t <registry-name>.azurecr.io/alan-web:latest .
 docker push <registry-name>.azurecr.io/alan-web:latest
+
+# Update Container Apps to use the new images
+az containerapp update --name ca-agent-dev --resource-group rg-alan-dev \
+  --image <registry-name>.azurecr.io/alan-agent:latest
+
+az containerapp update --name ca-chatapi-dev --resource-group rg-alan-dev \
+  --image <registry-name>.azurecr.io/alan-chatapi:latest
+
+az containerapp update --name ca-web-dev --resource-group rg-alan-dev \
+  --image <registry-name>.azurecr.io/alan-web:latest
 ```
 
 Or use the Azure Container Registry build tasks:
@@ -311,12 +352,29 @@ Access logs and metrics through:
 
 ## Troubleshooting
 
+### Container App Deployment Timeout During `azd up`
+
+**Symptom**: `ContainerAppOperationError: Failed to provision revision... Operation expired.`
+
+**Cause**: This typically happens when the infrastructure tries to use container images that don't exist yet.
+
+**Solution**: This is now handled automatically by the placeholder image strategy! If you still encounter this:
+
+1. Ensure you're using the latest version of the templates
+2. Check that environment variables are set: `azd env get-values | grep IMAGE`
+3. Verify the placeholder image is accessible: `mcr.microsoft.com/azuredocs/containerapps-helloworld:latest`
+4. Check Container Apps Environment network connectivity to Microsoft Container Registry
+
 ### Container App Not Starting
 
 1. Check logs in Azure Portal
 2. Verify managed identity has correct permissions
-3. Ensure container images are pushed to registry
-4. Verify environment variables are set correctly
+3. Check which image is being used: `az containerapp show --name <app-name> --resource-group <rg> --query properties.template.containers[0].image`
+4. If still using placeholder image, manually update:
+   ```bash
+   az containerapp update --name <app-name> --resource-group <rg> --image <registry>.azurecr.io/<image>:latest
+   ```
+5. Verify environment variables are set correctly
 
 ### Network Connectivity Issues
 

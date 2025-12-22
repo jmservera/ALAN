@@ -23,20 +23,31 @@ param principalType string
 param userIpAddress string
 
 // Azure OpenAI Parameters
+@description('Name of the Azure OpenAI deployment used by ALAN')
 param openAiDeploymentName string
+@description('Azure OpenAI model name for the deployment (e.g., gpt-4o, gpt-4o-mini)')
 param openAiModelName string
+@description('Azure OpenAI model version for the deployment')
 param openAiModelVersion string
+@description('Planned capacity or throughput setting for the Azure OpenAI deployment')
 param openAiModelCapacity int
 
 // Application Parameters
+@description('Maximum number of agent loop iterations allowed per day')
 param agentMaxLoopsPerDay int
+@description('Maximum number of tokens the agent may consume per day')
 param agentMaxTokensPerDay int
+@description('Delay between agent loop iterations in seconds')
 param agentThinkInterval int
 
 // Reliability Parameters
+@description('Enable zone redundancy for supported resources to improve availability')
 param enableZoneRedundancy bool
+@description('Enable autoscaling for application compute resources')
 param enableAutoScaling bool
+@description('Minimum number of application replicas when autoscaling is enabled')
 param minReplicas int
+@description('Maximum number of application replicas when autoscaling is enabled')
 param maxReplicas int
 
 // Container Image Parameters

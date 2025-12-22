@@ -51,8 +51,11 @@ param minReplicas int
 param maxReplicas int
 
 // Container Image Parameters
+@description('Container image for the agent service (e.g., registry.azurecr.io/alan-agent:latest)')
 param agentContainerImage string
+@description('Container image for the chatapi service (e.g., registry.azurecr.io/alan-chatapi:latest)')
 param chatApiContainerImage string
+@description('Container image for the web service (e.g., registry.azurecr.io/alan-web:latest)')
 param webContainerImage string
 
 @description('Tags to apply to all resources')
@@ -587,3 +590,19 @@ output chatApiUrl string = 'https://${chatApiApp.outputs.fqdn}'
 // Container Registry outputs
 output containerRegistryName string = containerRegistry.outputs.name
 output containerRegistryEndpoint string = containerRegistry.outputs.loginServer
+
+// Network outputs
+output vnetName string = vnet.outputs.name
+output vnetId string = vnet.outputs.resourceId
+
+// Log Analytics outputs
+output logAnalyticsWorkspaceId string = logAnalytics.outputs.resourceId
+output logAnalyticsWorkspaceName string = logAnalytics.outputs.name
+
+// Container Apps Environment outputs
+output containerAppsEnvironmentName string = containerAppsEnvironment.outputs.name
+output containerAppsEnvironmentId string = containerAppsEnvironment.outputs.resourceId
+
+// Resource Group outputs for convenience
+output resourceGroupName string = resourceGroup().name
+output location string = location

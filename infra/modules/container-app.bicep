@@ -45,6 +45,14 @@ param cpu string
 @description('Memory allocation (e.g., "1Gi", "2Gi")')
 param memory string
 
+@description('Scaling rule type: http, cpu, or none')
+@allowed([
+  'http'
+  'cpu'
+  'none'
+])
+param scalingRuleType string = 'http'
+
 // ==================================
 // Resources
 // ==================================
@@ -95,12 +103,21 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       scale: {
         minReplicas: minReplicas
         maxReplicas: maxReplicas
-        rules: maxReplicas > minReplicas ? [
-          {
+        rules: maxReplicas > minReplicas && scalingRuleType != 'none' ? [
+          scalingRuleType == 'http' ? {
             name: 'http-scaling'
             http: {
               metadata: {
                 concurrentRequests: '10'
+              }
+            }
+          } : {
+            name: 'cpu-scaling'
+            custom: {
+              type: 'cpu'
+              metadata: {
+                type: 'Utilization'
+                value: '75'
               }
             }
           }

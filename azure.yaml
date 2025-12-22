@@ -40,15 +40,26 @@ hooks:
         echo "Retrieving current user identity..."
         PRINCIPAL_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null)
         if [ -z "$PRINCIPAL_ID" ]; then
-          echo "Warning: Could not retrieve user principal ID. Using service principal if available."
-          PRINCIPAL_ID=$(az account show --query user.name -o tsv 2>/dev/null)
+          echo "Warning: Could not retrieve user principal ID via 'az ad signed-in-user show'."
+          # Fallback: check if this is a service principal
+          ACCOUNT_TYPE=$(az account show --query user.type -o tsv 2>/dev/null)
+          if [ "$ACCOUNT_TYPE" = "servicePrincipal" ]; then
+            # For service principals, get the appId and resolve to objectId
+            SP_APP_ID=$(az account show --query user.name -o tsv 2>/dev/null)
+            if [ -n "$SP_APP_ID" ]; then
+              PRINCIPAL_ID=$(az ad sp show --id "$SP_APP_ID" --query id -o tsv 2>/dev/null)
+              if [ -n "$PRINCIPAL_ID" ]; then
+                echo "Resolved service principal object ID: $PRINCIPAL_ID"
+              fi
+            fi
+          fi
         fi
 
         if [ -n "$PRINCIPAL_ID" ]; then
           echo "User Principal ID: $PRINCIPAL_ID"
           azd env set AZURE_PRINCIPAL_ID "$PRINCIPAL_ID"
         else
-          echo "Warning: Could not set AZURE_PRINCIPAL_ID"
+          echo "Warning: Could not set AZURE_PRINCIPAL_ID (no valid principal ID found)"
         fi
 
         # Get current user's public IP address

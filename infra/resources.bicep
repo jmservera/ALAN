@@ -443,6 +443,7 @@ module agentApp './modules/container-app.bicep' = {
     containerImage: agentContainerImage
     containerPort: 0 // No exposed port for agent
     enableIngress: false
+    scalingRuleType: 'cpu' // Use CPU-based scaling for background service
     environmentVariables: [
       {
         name: 'AZURE_CLIENT_ID'

@@ -1,4 +1,5 @@
 using ALAN.Shared.Services.Resilience;
+using Azure.Identity;
 using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
 using Microsoft.Extensions.Logging;
@@ -26,8 +27,26 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
         string queueName,
         ILogger<AzureStorageQueueService<T>> logger)
     {
-        _queueClient = new QueueClient(connectionString, queueName);
         _logger = logger;
+        
+        // Check authentication method: AccountKey, SharedAccessSignature, UseDevelopmentStorage, or managed identity
+        if (connectionString.Contains("AccountKey=", StringComparison.OrdinalIgnoreCase) ||
+            connectionString.Contains("SharedAccessSignature=", StringComparison.OrdinalIgnoreCase) ||
+            connectionString.Contains("UseDevelopmentStorage=", StringComparison.OrdinalIgnoreCase))
+        {
+            // Traditional connection string (account key, SAS token, or Azurite)
+            _queueClient = new QueueClient(connectionString, queueName);
+            _logger.LogInformation("Using connection string authentication for Azure Storage Queue: {QueueName}", queueName);
+        }
+        else
+        {
+            // Extract account name and use managed identity
+            var accountName = ExtractAccountName(connectionString);
+            var queueEndpoint = new Uri($"https://{accountName}.queue.core.windows.net/{queueName}");
+            _queueClient = new QueueClient(queueEndpoint, new DefaultAzureCredential());
+            _logger.LogInformation("Using managed identity authentication for Azure Storage Queue: {QueueName} on {AccountName}", queueName, accountName);
+        }
+        
         _resiliencePipeline = ResiliencePolicy.CreateStorageRetryPipeline(logger);
         _jsonOptions = new JsonSerializerOptions
         {
@@ -36,6 +55,21 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
         };
 
         _logger.LogInformation("Azure Storage Queue Service created for queue: {QueueName}", queueName);
+    }
+
+    private static string ExtractAccountName(string connectionString)
+    {
+        // Parse connection string to extract AccountName
+        var parts = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var part in parts)
+        {
+            var keyValue = part.Split('=', 2);
+            if (keyValue.Length == 2 && keyValue[0].Trim().Equals("AccountName", StringComparison.OrdinalIgnoreCase))
+            {
+                return keyValue[1].Trim();
+            }
+        }
+        throw new ArgumentException("Connection string must contain AccountName for managed identity authentication");
     }
 
     /// <summary>

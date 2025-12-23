@@ -76,12 +76,6 @@ hooks:
         else
           echo "Warning: Could not retrieve user IP address"
         fi
-
-        # Use placeholder images for initial provisioning
-        echo "Setting placeholder container images for initial provisioning..."
-        azd env set AGENT_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-        azd env set CHATAPI_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-        azd env set WEB_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
     windows:
       shell: pwsh
       run: |
@@ -133,12 +127,6 @@ hooks:
         } catch {
           Write-Host "Error retrieving IP address: $_"
         }
-
-        # Use placeholder images for initial provisioning
-        Write-Host "Setting placeholder container images for initial provisioning..."
-        azd env set AGENT_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-        azd env set CHATAPI_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-        azd env set WEB_CONTAINER_IMAGE "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
 
   postprovision:
     posix:

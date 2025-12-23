@@ -476,6 +476,10 @@ module agentApp './modules/container-app.bicep' = {
         name: 'AZURE_STORAGE_ACCOUNT_NAME'
         value: storage.outputs.name
       }
+      {
+        name: 'AZURE_STORAGE_CONNECTION_STRING'
+        value: 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.name};EndpointSuffix=${environment().suffixes.storage}'
+      }
     ]
     minReplicas: minReplicas
     maxReplicas: enableAutoScaling ? maxReplicas : minReplicas
@@ -516,6 +520,10 @@ module chatApiApp './modules/container-app.bicep' = {
         value: storage.outputs.name
       }
       {
+        name: 'AZURE_STORAGE_CONNECTION_STRING'
+        value: 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.name};EndpointSuffix=${environment().suffixes.storage}'
+      }
+      {
         name: 'ASPNETCORE_URLS'
         value: 'http://+:5041'
       }
@@ -552,11 +560,11 @@ module webApp './modules/container-app.bicep' = {
       }
       {
         name: 'CHATAPI_URL'
-        value: 'https://${chatApiApp.outputs.fqdn}/api'
+        value: 'http://${chatApiApp.outputs.fqdn}/api'
       }
       {
         name: 'NEXT_PUBLIC_CHATAPI_URL'
-        value: 'https://${chatApiApp.outputs.fqdn}/api'
+        value: 'http://${chatApiApp.outputs.fqdn}/api'
       }
     ]
     minReplicas: minReplicas

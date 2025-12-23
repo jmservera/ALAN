@@ -51,13 +51,13 @@
       "value": "${MAX_REPLICAS=10}"
     },
     "agentContainerImage": {
-      "value": "${AGENT_CONTAINER_IMAGE=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+      "value": "${SERVICE_AGENT_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
     },
     "chatApiContainerImage": {
-      "value": "${CHATAPI_CONTAINER_IMAGE=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+      "value": "${SERVICE_CHATAPI_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
     },
     "webContainerImage": {
-      "value": "${WEB_CONTAINER_IMAGE=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+      "value": "${SERVICE_WEB_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
     }
   }
 }

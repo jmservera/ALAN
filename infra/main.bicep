@@ -8,7 +8,7 @@ targetScope = 'subscription'
 // ==================================
 
 @minLength(1)
-@maxLength(64)
+@maxLength(54)
 @description('Name of the environment (e.g., dev, staging, prod)')
 param environmentName string
 

@@ -425,7 +425,7 @@ module agentApp './modules/container-app.bicep' = {
   params: {
     name: '${abbrs.appContainerApps}agent-${environmentName}'
     location: location
-    tags: tags
+    tags: union(tags, { 'azd-service-name': 'agent' })
     containerAppsEnvironmentId: containerAppsEnvironment.outputs.resourceId
     managedIdentityId: managedIdentity.outputs.resourceId
     containerRegistryName: containerRegistry.outputs.name
@@ -475,7 +475,7 @@ module chatApiApp './modules/container-app.bicep' = {
   params: {
     name: '${abbrs.appContainerApps}chatapi-${environmentName}'
     location: location
-    tags: tags
+    tags: union(tags, { 'azd-service-name': 'chatapi' })
     containerAppsEnvironmentId: containerAppsEnvironment.outputs.resourceId
     managedIdentityId: managedIdentity.outputs.resourceId
     containerRegistryName: containerRegistry.outputs.name
@@ -518,7 +518,7 @@ module webApp './modules/container-app.bicep' = {
   params: {
     name: '${abbrs.appContainerApps}web-${environmentName}'
     location: location
-    tags: tags
+    tags: union(tags, { 'azd-service-name': 'web' })
     containerAppsEnvironmentId: containerAppsEnvironment.outputs.resourceId
     managedIdentityId: managedIdentity.outputs.resourceId
     containerRegistryName: containerRegistry.outputs.name

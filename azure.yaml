@@ -40,15 +40,26 @@ hooks:
         echo "Retrieving current user identity..."
         PRINCIPAL_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null)
         if [ -z "$PRINCIPAL_ID" ]; then
-          echo "Warning: Could not retrieve user principal ID. Using service principal if available."
-          PRINCIPAL_ID=$(az account show --query user.name -o tsv 2>/dev/null)
+          echo "Warning: Could not retrieve user principal ID via 'az ad signed-in-user show'."
+          # Fallback: check if this is a service principal
+          ACCOUNT_TYPE=$(az account show --query user.type -o tsv 2>/dev/null)
+          if [ "$ACCOUNT_TYPE" = "servicePrincipal" ]; then
+            # For service principals, get the appId and resolve to objectId
+            SP_APP_ID=$(az account show --query user.name -o tsv 2>/dev/null)
+            if [ -n "$SP_APP_ID" ]; then
+              PRINCIPAL_ID=$(az ad sp show --id "$SP_APP_ID" --query id -o tsv 2>/dev/null)
+              if [ -n "$PRINCIPAL_ID" ]; then
+                echo "Resolved service principal object ID: $PRINCIPAL_ID"
+              fi
+            fi
+          fi
         fi
 
         if [ -n "$PRINCIPAL_ID" ]; then
           echo "User Principal ID: $PRINCIPAL_ID"
           azd env set AZURE_PRINCIPAL_ID "$PRINCIPAL_ID"
         else
-          echo "Warning: Could not set AZURE_PRINCIPAL_ID"
+          echo "Warning: Could not set AZURE_PRINCIPAL_ID (no valid principal ID found)"
         fi
 
         # Get current user's public IP address
@@ -77,20 +88,32 @@ hooks:
         Write-Host "Preparing infrastructure provisioning..."
         Write-Host "Environment: $env:AZURE_ENV_NAME"
 
-        # Get current user's Azure AD principal ID
+        # Get current user's Azure AD principal ID (object ID)
         Write-Host "Retrieving current user identity..."
         try {
+          # First, try to get the signed-in user's object ID
           $principalId = az ad signed-in-user show --query id -o tsv 2>$null
-          if ([string]::IsNullOrEmpty($principalId)) {
-            Write-Host "Warning: Could not retrieve user principal ID. Using service principal if available."
-            $principalId = az account show --query user.name -o tsv 2>$null
+
+          if ([string]::IsNullOrWhiteSpace($principalId)) {
+            Write-Host "User principal ID not found, attempting to resolve service principal identity..."
+
+            # Check if the current context is a service principal
+            $accountUserType = az account show --query user.type -o tsv 2>$null
+            if ($accountUserType -eq "servicePrincipal") {
+              # For service principals, az account show --query user.name returns the appId
+              $spAppId = az account show --query user.name -o tsv 2>$null
+              if (-not [string]::IsNullOrWhiteSpace($spAppId)) {
+                # Resolve the service principal's object ID
+                $principalId = az ad sp show --id $spAppId --query id -o tsv 2>$null
+              }
+            }
           }
-          
-          if (-not [string]::IsNullOrEmpty($principalId)) {
-            Write-Host "User Principal ID: $principalId"
+
+          if (-not [string]::IsNullOrWhiteSpace($principalId)) {
+            Write-Host "Resolved Principal ID (object ID): $principalId"
             azd env set AZURE_PRINCIPAL_ID $principalId
           } else {
-            Write-Host "Warning: Could not set AZURE_PRINCIPAL_ID"
+            Write-Host "Warning: Could not determine an Azure AD principal object ID. AZURE_PRINCIPAL_ID will not be set."
           }
         } catch {
           Write-Host "Error retrieving principal ID: $_"

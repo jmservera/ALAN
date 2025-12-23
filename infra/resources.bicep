@@ -23,25 +23,39 @@ param principalType string
 param userIpAddress string
 
 // Azure OpenAI Parameters
+@description('Name of the Azure OpenAI deployment used by ALAN')
 param openAiDeploymentName string
+@description('Azure OpenAI model name for the deployment (e.g., gpt-4o, gpt-4o-mini)')
 param openAiModelName string
+@description('Azure OpenAI model version for the deployment')
 param openAiModelVersion string
+@description('Planned capacity or throughput setting for the Azure OpenAI deployment')
 param openAiModelCapacity int
 
 // Application Parameters
+@description('Maximum number of agent loop iterations allowed per day')
 param agentMaxLoopsPerDay int
+@description('Maximum number of tokens the agent may consume per day')
 param agentMaxTokensPerDay int
+@description('Delay between agent loop iterations in seconds')
 param agentThinkInterval int
 
 // Reliability Parameters
+@description('Enable zone redundancy for supported resources to improve availability')
 param enableZoneRedundancy bool
+@description('Enable autoscaling for application compute resources')
 param enableAutoScaling bool
+@description('Minimum number of application replicas when autoscaling is enabled')
 param minReplicas int
+@description('Maximum number of application replicas when autoscaling is enabled')
 param maxReplicas int
 
 // Container Image Parameters
+@description('Container image for the agent service (e.g., registry.azurecr.io/alan-agent:latest)')
 param agentContainerImage string
+@description('Container image for the chatapi service (e.g., registry.azurecr.io/alan-chatapi:latest)')
 param chatApiContainerImage string
+@description('Container image for the web service (e.g., registry.azurecr.io/alan-web:latest)')
 param webContainerImage string
 
 @description('Tags to apply to all resources')
@@ -432,6 +446,7 @@ module agentApp './modules/container-app.bicep' = {
     containerImage: agentContainerImage
     containerPort: 0 // No exposed port for agent
     enableIngress: false
+    scalingRuleType: 'cpu' // Use CPU-based scaling for background service
     environmentVariables: [
       {
         name: 'AZURE_CLIENT_ID'
@@ -561,7 +576,7 @@ output managedIdentityPrincipalId string = managedIdentity.outputs.principalId
 
 // Storage outputs
 output storageAccountName string = storage.outputs.name
-// Note: Connection string with access key not available when using private endpoints with managed identity
+// Note: Managed identity connection string (no AccountKey); storage access keys are not available when using private endpoints
 output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.name};EndpointSuffix=${environment().suffixes.storage}'
 
 // OpenAI outputs
@@ -575,3 +590,19 @@ output chatApiUrl string = 'https://${chatApiApp.outputs.fqdn}'
 // Container Registry outputs
 output containerRegistryName string = containerRegistry.outputs.name
 output containerRegistryEndpoint string = containerRegistry.outputs.loginServer
+
+// Network outputs
+output vnetName string = vnet.outputs.name
+output vnetId string = vnet.outputs.resourceId
+
+// Log Analytics outputs
+output logAnalyticsWorkspaceId string = logAnalytics.outputs.resourceId
+output logAnalyticsWorkspaceName string = logAnalytics.outputs.name
+
+// Container Apps Environment outputs
+output containerAppsEnvironmentName string = containerAppsEnvironment.outputs.name
+output containerAppsEnvironmentId string = containerAppsEnvironment.outputs.resourceId
+
+// Resource Group outputs for convenience
+output resourceGroupName string = resourceGroup().name
+output location string = location

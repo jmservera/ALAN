@@ -161,3 +161,15 @@ output AZURE_MANAGED_IDENTITY_PRINCIPAL_ID string = resources.outputs.managedIde
 // Container Registry outputs
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.containerRegistryEndpoint
 output AZURE_CONTAINER_REGISTRY_NAME string = resources.outputs.containerRegistryName
+
+// Network outputs
+output AZURE_VNET_NAME string = resources.outputs.vnetName
+output AZURE_VNET_ID string = resources.outputs.vnetId
+
+// Log Analytics outputs
+output AZURE_LOG_ANALYTICS_WORKSPACE_ID string = resources.outputs.logAnalyticsWorkspaceId
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.logAnalyticsWorkspaceName
+
+// Container Apps Environment outputs
+output AZURE_CONTAINER_APPS_ENVIRONMENT_NAME string = resources.outputs.containerAppsEnvironmentName
+output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.containerAppsEnvironmentId

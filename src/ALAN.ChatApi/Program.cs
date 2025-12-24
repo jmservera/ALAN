@@ -140,9 +140,9 @@ app.UseHttpLogging();
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
+    app.UseHttpsRedirection();
 }
 
-app.UseHttpsRedirection();
 app.UseCors();
 
 app.UseAuthorization();

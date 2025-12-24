@@ -612,6 +612,10 @@ module webApp './modules/container-app.bicep' = {
         name: 'NEXT_PUBLIC_CHATAPI_URL'
         value: 'http://${chatApiApp.outputs.fqdn}/api'
       }
+      {
+        name: 'AGENT_URL'
+        value: 'http://${chatApiApp.outputs.fqdn}/copilotkit'
+      }
     ]
     minReplicas: minReplicas
     maxReplicas: enableAutoScaling ? maxReplicas : minReplicas

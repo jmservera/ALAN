@@ -109,6 +109,47 @@ module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.9.1' = {
   }
 }
 
+// Network Security Group for Container Apps subnet
+// Allow inbound HTTPS/HTTP for external ingress
+module nsgContainerApps 'br/public:avm/res/network/network-security-group:0.5.0' = {
+  name: 'nsg-container-apps-${environmentName}'
+  params: {
+    name: '${vnetName}-container-apps-subnet-nsg'
+    location: location
+    tags: tags
+    securityRules: [
+      {
+        name: 'AllowHttpsInbound'
+        properties: {
+          description: 'Allow HTTPS inbound for Container Apps external ingress'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '443'
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: '*'
+          access: 'Allow'
+          priority: 100
+          direction: 'Inbound'
+        }
+      }
+      {
+        name: 'AllowHttpInbound'
+        properties: {
+          description: 'Allow HTTP inbound for Container Apps external ingress'
+          protocol: 'Tcp'
+          sourcePortRange: '*'
+          destinationPortRange: '80'
+          sourceAddressPrefix: 'Internet'
+          destinationAddressPrefix: '*'
+          access: 'Allow'
+          priority: 110
+          direction: 'Inbound'
+        }
+      }
+    ]
+  }
+}
+
 // Virtual Network with subnets
 module vnet 'br/public:avm/res/network/virtual-network:0.5.2' = {
   name: 'vnet-${environmentName}'
@@ -137,6 +178,7 @@ module vnet 'br/public:avm/res/network/virtual-network:0.5.2' = {
         name: 'container-apps-subnet'
         addressPrefix: containerAppsSubnetAddressPrefix
         delegation: 'Microsoft.App/environments'
+        networkSecurityGroupResourceId: nsgContainerApps.outputs.resourceId
       }
     ]
   }
@@ -557,6 +599,10 @@ module webApp './modules/container-app.bicep' = {
       {
         name: 'PORT'
         value: '5269'
+      }
+      {
+        name: 'HOSTNAME'
+        value: '0.0.0.0'
       }
       {
         name: 'CHATAPI_URL'

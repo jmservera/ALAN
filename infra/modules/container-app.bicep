@@ -53,6 +53,9 @@ param memory string
 ])
 param scalingRuleType string = 'http'
 
+@description('Workload profile name (e.g., Consumption for consumption profile)')
+param workloadProfileName string = 'Consumption'
+
 // ==================================
 // Resources
 // ==================================
@@ -69,6 +72,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
   }
   properties: {
     environmentId: containerAppsEnvironmentId
+    workloadProfileName: workloadProfileName
     configuration: {
       ingress: enableIngress ? {
         external: ingressExternal

@@ -472,6 +472,12 @@ module containerAppsEnvironment 'br/public:avm/res/app/managed-environment:0.8.2
     infrastructureSubnetId: vnet.outputs.subnetResourceIds[2] // container-apps-subnet
     internal: false // false to allow public access to web app
     zoneRedundant: enableZoneRedundancy
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
   }
 }
 
@@ -527,6 +533,7 @@ module agentApp './modules/container-app.bicep' = {
     maxReplicas: enableAutoScaling ? maxReplicas : minReplicas
     cpu: '0.5'
     memory: '1Gi'
+    workloadProfileName: 'Consumption'
   }
 }
 
@@ -578,6 +585,7 @@ module chatApiApp './modules/container-app.bicep' = {
     maxReplicas: enableAutoScaling ? maxReplicas : minReplicas
     cpu: '0.5'
     memory: '1Gi'
+    workloadProfileName: 'Consumption'
   }
 }
 
@@ -610,21 +618,22 @@ module webApp './modules/container-app.bicep' = {
       }
       {
         name: 'CHATAPI_URL'
-        value: 'http://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/api'
+        value: 'https://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/api'
       }
       {
         name: 'NEXT_PUBLIC_CHATAPI_URL'
-        value: 'http://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/api'
+        value: 'https://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/api'
       }
       {
         name: 'AGENT_URL'
-        value: 'http://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/copilotkit'
+        value: 'https://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/copilotkit'
       }
     ]
     minReplicas: minReplicas
     maxReplicas: enableAutoScaling ? maxReplicas : minReplicas
     cpu: '0.5'
     memory: '1Gi'
+    workloadProfileName: 'Consumption'
   }
 }
 

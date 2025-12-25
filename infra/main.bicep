@@ -82,6 +82,11 @@ param chatApiContainerImage string = 'mcr.microsoft.com/azuredocs/containerapps-
 @description('Container image for web service (use mcr.microsoft.com/azuredocs/containerapps-helloworld:latest as placeholder)')
 param webContainerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
+@description('GitHub MCP PAT for the agent to access repositories')
+param github_mcp_pat string
+@description('GitHub project URL for the agent to access repositories')
+param github_project_url string = 'jmservera/ALAN'
+
 // ==================================
 // Variables
 // ==================================
@@ -129,6 +134,8 @@ module resources './resources.bicep' = {
     agentContainerImage: agentContainerImage
     chatApiContainerImage: chatApiContainerImage
     webContainerImage: webContainerImage
+    github_mcp_pat: github_mcp_pat
+    github_project_url: github_project_url
     tags: commonTags
   }
 }

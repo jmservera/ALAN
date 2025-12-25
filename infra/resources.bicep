@@ -58,6 +58,11 @@ param chatApiContainerImage string
 @description('Container image for the web service (e.g., registry.azurecr.io/alan-web:latest)')
 param webContainerImage string
 
+@description('GitHub MCP PAT for the agent to access repositories')
+param github_mcp_pat string
+@description('GitHub project URL for the agent to access repositories')
+param github_project_url string = 'jmservera/ALAN'
+
 @description('Tags to apply to all resources')
 param tags object
 
@@ -527,6 +532,14 @@ module agentApp './modules/container-app.bicep' = {
       {
         name: 'AZURE_STORAGE_CONNECTION_STRING'
         value: 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.name};EndpointSuffix=${environment().suffixes.storage}'
+      }
+      {
+        name: 'GITHUB_MCP_PAT'
+        value: github_mcp_pat // From deployment parameters or secure source
+      }
+      {
+        name: 'GITHUB_PROJECT_URL'
+        value: github_project_url // From deployment parameters or secure source
       }
     ]
     minReplicas: minReplicas

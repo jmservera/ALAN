@@ -58,6 +58,12 @@
     },
     "webContainerImage": {
       "value": "${SERVICE_WEB_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+    },
+    "github_mcp_pat": {
+      "value": "${GITHUB_MCP_PAT}"
+    },
+    "github_project_url": {
+      "value": "${GITHUB_PROJECT_URL=jmservera/ALAN}"
     }
   }
 }

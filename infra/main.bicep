@@ -151,6 +151,7 @@ output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
 
 // Azure OpenAI outputs for local development
 output AZURE_OPENAI_ENDPOINT string = resources.outputs.openAiEndpoint
+output AZURE_OPENAI_NAME string = resources.outputs.openAiName
 output AZURE_OPENAI_DEPLOYMENT string = openAiDeploymentName
 
 // Storage outputs for local development

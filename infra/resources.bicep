@@ -200,16 +200,7 @@ module storage 'br/public:avm/res/storage/storage-account:0.14.3' = {
     kind: 'StorageV2'
     allowBlobPublicAccess: false
     publicNetworkAccess: 'Disabled'
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Deny'
-      ipRules: !empty(userIpAddress) ? [
-        {
-          value: userIpAddress
-          action: 'Allow'
-        }
-      ] : []
-    }
+
     blobServices: {
       containers: [
         {
@@ -369,11 +360,7 @@ module openai 'br/public:avm/res/cognitive-services/account:0.9.1' = {
     networkAcls: {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
-      ipRules: !empty(userIpAddress) ? [
-        {
-          value: userIpAddress
-        }
-      ] : []
+      ipRules: []
     }
     deployments: [
       {

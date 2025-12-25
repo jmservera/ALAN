@@ -4,6 +4,54 @@ This directory contains helper scripts for deploying and managing ALAN infrastru
 
 ## Scripts
 
+### `postprovision.sh` / `postprovision.ps1` ⭐ NEW
+
+Post-provision scripts that enable local development access to Azure OpenAI.
+
+**Features:**
+
+- ✓ Automatically configures OpenAI access for local development
+- ✓ Adds current user's IP to OpenAI network rules
+- ✓ Assigns Cognitive Services OpenAI User role to current user
+- ✓ Only runs locally (skips when CI environment variable is set)
+- ✓ Keeps production deployments fully secured
+
+**Usage:**
+
+These scripts are automatically invoked by `azd provision` via the `postprovision` hook in `azure.yaml`.
+
+**Manual Execution:**
+
+```bash
+# Linux/macOS
+./scripts/postprovision.sh
+
+# Windows
+.\scripts\postprovision.ps1
+```
+
+**What it Does:**
+
+1. Checks if running in CI environment (exits if CI is set)
+2. Retrieves deployment information from azd environment
+3. Gets current user's public IP address
+4. Enables public network access on OpenAI resource
+5. Adds current IP to OpenAI network rules
+6. Assigns Cognitive Services OpenAI User role to current user
+
+**Requirements:**
+
+- Azure CLI installed and authenticated
+- azd environment configured (automatically available after `azd provision`)
+- `dig` or `curl` for IP address retrieval
+
+**Security Notes:**
+
+- This script only runs during local development (`CI` environment variable not set)
+- Production deployments via GitHub Actions remain fully secured with private endpoints
+- Network rules are restrictive - only the current IP is allowed
+- Role assignments follow principle of least privilege
+
 ### `validate-deployment.sh` ⭐ NEW
 
 A validation script that checks if the container image deployment strategy is correctly configured.

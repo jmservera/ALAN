@@ -13,7 +13,6 @@ using Azure.AI.OpenAI;
 using Azure;
 using OpenAI;
 using Azure.Identity;
-using ChatResponse = ALAN.Shared.Models.ChatResponse;
 
 var builder = Host.CreateApplicationBuilder(args);
 

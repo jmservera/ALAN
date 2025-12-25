@@ -32,6 +32,7 @@ hooks:
   preprovision:
     posix:
       shell: sh
+      interactive: true
       run: |
         echo "Preparing infrastructure provisioning..."
         echo "Environment: ${AZURE_ENV_NAME}"
@@ -131,8 +132,12 @@ hooks:
   postprovision:
     posix:
       shell: sh
+      interactive: true
       run: |
         echo "Infrastructure provisioned successfully!"
+
+        # Configure development access to Azure OpenAI (only runs locally)
+        ./scripts/postprovision.sh
 
         # Get resource group and registry name
         RESOURCE_GROUP=$(azd env get-values | grep AZURE_RESOURCE_GROUP | cut -d= -f2 | tr -d '"')
@@ -186,6 +191,9 @@ hooks:
       shell: pwsh
       run: |
         Write-Host "Infrastructure provisioned successfully!"
+
+        # Configure development access to Azure OpenAI (only runs locally)
+        .\scripts\postprovision.ps1
 
         # Get resource group and registry name
         $envValues = azd env get-values | Out-String

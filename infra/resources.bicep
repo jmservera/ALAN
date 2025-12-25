@@ -569,6 +569,10 @@ module chatApiApp './modules/container-app.bicep' = {
         name: 'ASPNETCORE_URLS'
         value: 'http://+:5041'
       }
+      {
+        name: 'ALAN_CHATAPI_ALLOWED_ORIGINS'
+        value: 'https://${abbrs.appContainerApps}web-${environmentName}.${containerAppsEnvironment.outputs.defaultDomain}'
+      }
     ]
     minReplicas: minReplicas
     maxReplicas: enableAutoScaling ? maxReplicas : minReplicas
@@ -606,15 +610,15 @@ module webApp './modules/container-app.bicep' = {
       }
       {
         name: 'CHATAPI_URL'
-        value: 'http://${chatApiApp.outputs.fqdn}/api'
+        value: 'http://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/api'
       }
       {
         name: 'NEXT_PUBLIC_CHATAPI_URL'
-        value: 'http://${chatApiApp.outputs.fqdn}/api'
+        value: 'http://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/api'
       }
       {
         name: 'AGENT_URL'
-        value: 'http://${chatApiApp.outputs.fqdn}/copilotkit'
+        value: 'http://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/copilotkit'
       }
     ]
     minReplicas: minReplicas

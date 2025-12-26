@@ -73,6 +73,45 @@ builder.Services.AddSingleton<IShortTermMemoryService>(sp =>
         storageConnectionString,
         sp.GetRequiredService<ILogger<AzureBlobShortTermMemoryService>>()));
 
+// Register vector memory service if Azure AI Search is configured
+var searchEndpoint = builder.Configuration["AzureAISearch:Endpoint"]
+    ?? builder.Configuration["AZURE_AI_SEARCH_ENDPOINT"]
+    ?? Environment.GetEnvironmentVariable("AZURE_AI_SEARCH_ENDPOINT");
+
+if (!string.IsNullOrEmpty(searchEndpoint))
+{
+    var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Azure AI Search configured, enabling vector memory in ChatAPI");
+    
+    // We'll register the actual service after we have the OpenAI endpoint
+    builder.Services.AddSingleton<IVectorMemoryService>(sp =>
+    {
+        var openAIEndpoint = builder.Configuration["AzureOpenAI:Endpoint"]
+            ?? builder.Configuration["AZURE_OPENAI_ENDPOINT"]
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+        
+        var embeddingDeployment = builder.Configuration["AzureOpenAI:EmbeddingDeployment"]
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+            ?? "text-embedding-ada-002";
+        
+        if (string.IsNullOrEmpty(openAIEndpoint))
+        {
+            throw new InvalidOperationException("Azure OpenAI endpoint is required for vector memory");
+        }
+        
+        return new AzureAISearchMemoryService(
+            searchEndpoint,
+            openAIEndpoint,
+            embeddingDeployment,
+            sp.GetRequiredService<ILogger<AzureAISearchMemoryService>>());
+    });
+}
+else
+{
+    var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+    logger.LogWarning("Azure AI Search not configured in ChatAPI. Vector memory features will not be available.");
+}
+
 // Register queue service for steering commands (human inputs)
 builder.Services.AddSingleton<IMessageQueue<HumanInput>>(sp =>
     new AzureStorageQueueService<HumanInput>(

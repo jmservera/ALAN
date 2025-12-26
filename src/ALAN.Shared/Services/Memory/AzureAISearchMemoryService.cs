@@ -335,6 +335,13 @@ public class AzureAISearchMemoryService : IVectorMemoryService
 
     private async Task<ReadOnlyMemory<float>> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _logger.LogWarning("Attempted to generate embedding for null or empty text");
+            // Return a zero vector as fallback
+            return new float[1536];
+        }
+
         var embeddingClient = _openAIClient.GetEmbeddingClient(_embeddingDeployment);
 
         var response = await _resiliencePipeline.ExecuteAsync(async ct =>
@@ -346,12 +353,18 @@ public class AzureAISearchMemoryService : IVectorMemoryService
 
     private static MemoryEntry ConvertToMemoryEntry(MemorySearchDocument document)
     {
+        // Safely parse memory type with fallback
+        if (!Enum.TryParse<MemoryType>(document.Type, out var memoryType))
+        {
+            memoryType = MemoryType.Observation; // Default fallback
+        }
+
         return new MemoryEntry
         {
             Id = document.Id,
             Content = document.Content,
             Summary = document.Summary,
-            Type = Enum.Parse<MemoryType>(document.Type),
+            Type = memoryType,
             Timestamp = document.Timestamp.UtcDateTime,
             Importance = document.Importance,
             Tags = [.. document.Tags],

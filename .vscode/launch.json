@@ -14,19 +14,6 @@
       "internalConsoleOptions": "openOnFirstSessionStart"
     },
     {
-      "name": "C#: Launch ALAN.Web",
-      "type": "dotnet",
-      "request": "launch",
-      "projectPath": "${workspaceFolder}/src/ALAN.Web/ALAN.Web.csproj",
-      "envFile": "${workspaceFolder}/.env",
-      "console": "integratedTerminal",
-      "internalConsoleOptions": "openOnFirstSessionStart",
-      "serverReadyAction": {
-        "action": "openExternally",
-        "pattern": "\\bNow listening on:\\s+(https?://\\S+)"
-      }
-    },
-    {
       "name": "C#: Launch ALAN.ChatApi",
       "type": "dotnet",
       "request": "launch",
@@ -34,14 +21,38 @@
       "envFile": "${workspaceFolder}/.env",
       "console": "integratedTerminal",
       "internalConsoleOptions": "openOnFirstSessionStart"
+    },
+    {
+      "name": "Launch ALAN.Web (Next.js)",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/src/ALAN.Web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "serverReadyAction": {
+        "pattern": "Local:.+(https?://\\S+)",
+        "uriFormat": "%s",
+        "action": "debugWithChrome"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "neverOpen"
     }
   ],
   "compounds": [
     {
-      "name": "Launch Agent + Web + API",
-      "configurations": ["C#: Launch ALAN.Agent", "C#: Launch ALAN.Web", "C#: Launch ALAN.ChatApi"],
+      "name": "Launch Agent + ChatApi + Web",
+      "configurations": [
+        "C#: Launch ALAN.Agent",
+        "C#: Launch ALAN.ChatApi",
+        "Launch ALAN.Web (Next.js)"
+      ],
       "stopAll": true,
-      "preLaunchTask": "build-all"
+      "preLaunchTask": "build-and-start-azurite",
+      "postDebugTask": "stop_azurite",
+      "presentation": {
+        "default": true,
+        "order": 1
+      }
     }
   ]
 }

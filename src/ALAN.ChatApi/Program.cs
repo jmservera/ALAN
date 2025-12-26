@@ -1,18 +1,36 @@
 using ALAN.ChatApi.Services;
+using ALAN.Shared.Services;
 using ALAN.Shared.Services.Memory;
+using ALAN.Shared.Services.Queue;
+using ALAN.Shared.Models;
 using Microsoft.Agents.AI;
+using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using Microsoft.Extensions.AI;
 using Azure.AI.OpenAI;
 using Azure.Identity;
 using Azure;
 using OpenAI;
+using Microsoft.AspNetCore.HttpLogging;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddHttpLogging(logging =>
+{
+    logging.LoggingFields = HttpLoggingFields.RequestPropertiesAndHeaders | HttpLoggingFields.RequestBody
+        | HttpLoggingFields.ResponsePropertiesAndHeaders | HttpLoggingFields.ResponseBody;
+    logging.RequestBodyLogLimit = int.MaxValue;
+    logging.ResponseBodyLogLimit = int.MaxValue;
+});
+builder.Services.AddHttpClient().AddLogging();
+builder.Services.AddAGUI();
 // Add services to the container.
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 builder.Services.AddEndpointsApiExplorer();
-
 // Register PromptService
 builder.Services.AddSingleton<IPromptService, PromptService>();
 
@@ -49,6 +67,22 @@ builder.Services.AddSingleton<ILongTermMemoryService>(sp =>
     new AzureBlobLongTermMemoryService(
         storageConnectionString,
         sp.GetRequiredService<ILogger<AzureBlobLongTermMemoryService>>()));
+
+builder.Services.AddSingleton<IShortTermMemoryService>(sp =>
+    new AzureBlobShortTermMemoryService(
+        storageConnectionString,
+        sp.GetRequiredService<ILogger<AzureBlobShortTermMemoryService>>()));
+
+// Register queue service for steering commands (human inputs)
+builder.Services.AddSingleton<IMessageQueue<HumanInput>>(sp =>
+    new AzureStorageQueueService<HumanInput>(
+        storageConnectionString,
+        "human-inputs",
+        sp.GetRequiredService<ILogger<AzureStorageQueueService<HumanInput>>>()));
+
+// Register AgentStateService as both a singleton and hosted service
+builder.Services.AddSingleton<AgentStateService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<AgentStateService>());
 
 // Configure Azure OpenAI
 var endpoint = builder.Configuration["AzureOpenAI:Endpoint"]
@@ -87,37 +121,37 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     var promptService = sp.GetRequiredService<IPromptService>();
     var instructions = promptService.RenderTemplate("chat-agent-instructions", new { });
 
+    var agentName = builder.Configuration["ChatApi:AgentName"]
+        ?? Environment.GetEnvironmentVariable("ALAN_AGENT_NAME")
+        ?? "alanagent";
+
     var agent = azureClient.GetChatClient(deploymentName)
+                             .AsIChatClient()
                           .CreateAIAgent(
                               instructions: instructions,
-                              name: "ALAN-Chat");
+                              name: agentName);
     return agent;
 });
 
-// Register ChatService
-builder.Services.AddSingleton<ChatService>();
-
 var app = builder.Build();
+app.UseHttpLogging();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseDeveloperExceptionPage();
+    app.UseHttpsRedirection();
 }
 
-app.UseHttpsRedirection();
 app.UseCors();
-
-// Enable WebSocket support
-// Read keep-alive interval from configuration (in seconds), default to 120 seconds (2 minutes)
-var keepAliveIntervalSeconds = builder.Configuration.GetValue<int?>("WebSockets:KeepAliveIntervalSeconds") ?? 120;
-var webSocketOptions = new WebSocketOptions
-{
-    KeepAliveInterval = TimeSpan.FromSeconds(keepAliveIntervalSeconds)
-};
-app.UseWebSockets(webSocketOptions);
 
 app.UseAuthorization();
 app.MapControllers();
 
-app.Run();
+// Map AG-UI endpoint
+// This exposes the AIAgent via the AG-UI protocol at /copilotkit endpoint
+// The AG-UI protocol enables streaming chat, tool calls, and state management
+var aguiAgent = app.Services.GetRequiredService<AIAgent>();
+app.MapAGUI("/copilotkit", aguiAgent);
+
+await app.RunAsync();

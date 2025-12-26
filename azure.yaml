@@ -1,0 +1,271 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: alan
+metadata:
+  template: alan@0.0.1
+
+services:
+  agent:
+    project: ./src/ALAN.Agent
+    language: dotnet
+    host: containerapp
+    docker:
+      path: ../../Dockerfile.agent
+      context: ../../
+
+  chatapi:
+    project: ./src/ALAN.ChatApi
+    language: dotnet
+    host: containerapp
+    docker:
+      path: ../../Dockerfile.chatapi
+      context: ../../
+  web:
+    project: ./src/ALAN.Web
+    language: js
+    host: containerapp
+    docker:
+      path: ../../Dockerfile.web
+      context: ../../
+
+hooks:
+  preprovision:
+    posix:
+      shell: sh
+      interactive: true
+      run: |
+        echo "Preparing infrastructure provisioning..."
+        echo "Environment: ${AZURE_ENV_NAME}"
+
+        # Get current user's Azure AD principal ID
+        echo "Retrieving current user identity..."
+        PRINCIPAL_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null)
+        if [ -z "$PRINCIPAL_ID" ]; then
+          echo "Warning: Could not retrieve user principal ID via 'az ad signed-in-user show'."
+          # Fallback: check if this is a service principal
+          ACCOUNT_TYPE=$(az account show --query user.type -o tsv 2>/dev/null)
+          if [ "$ACCOUNT_TYPE" = "servicePrincipal" ]; then
+            # For service principals, get the appId and resolve to objectId
+            SP_APP_ID=$(az account show --query user.name -o tsv 2>/dev/null)
+            if [ -n "$SP_APP_ID" ]; then
+              PRINCIPAL_ID=$(az ad sp show --id "$SP_APP_ID" --query id -o tsv 2>/dev/null)
+              if [ -n "$PRINCIPAL_ID" ]; then
+                echo "Resolved service principal object ID: $PRINCIPAL_ID"
+              fi
+            fi
+          fi
+        fi
+
+        if [ -n "$PRINCIPAL_ID" ]; then
+          echo "User Principal ID: $PRINCIPAL_ID"
+          azd env set AZURE_PRINCIPAL_ID "$PRINCIPAL_ID"
+        else
+          echo "Warning: Could not set AZURE_PRINCIPAL_ID (no valid principal ID found)"
+        fi
+
+        # Get current user's public IP address
+        echo "Retrieving current user's public IP..."
+        USER_IP=$(dig +short myip.opendns.com @resolver1.opendns.com 2>/dev/null)
+        if [ -z "$USER_IP" ]; then
+          # Fallback to curl if dig is not available
+          USER_IP=$(curl -s https://api.ipify.org 2>/dev/null)
+        fi
+
+        if [ -n "$USER_IP" ]; then
+          echo "User IP Address: $USER_IP"
+          azd env set AZURE_USER_IP "$USER_IP"
+        else
+          echo "Warning: Could not retrieve user IP address"
+        fi
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Preparing infrastructure provisioning..."
+        Write-Host "Environment: $env:AZURE_ENV_NAME"
+
+        # Get current user's Azure AD principal ID (object ID)
+        Write-Host "Retrieving current user identity..."
+        try {
+          # First, try to get the signed-in user's object ID
+          $principalId = az ad signed-in-user show --query id -o tsv 2>$null
+
+          if ([string]::IsNullOrWhiteSpace($principalId)) {
+            Write-Host "User principal ID not found, attempting to resolve service principal identity..."
+
+            # Check if the current context is a service principal
+            $accountUserType = az account show --query user.type -o tsv 2>$null
+            if ($accountUserType -eq "servicePrincipal") {
+              # For service principals, az account show --query user.name returns the appId
+              $spAppId = az account show --query user.name -o tsv 2>$null
+              if (-not [string]::IsNullOrWhiteSpace($spAppId)) {
+                # Resolve the service principal's object ID
+                $principalId = az ad sp show --id $spAppId --query id -o tsv 2>$null
+              }
+            }
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($principalId)) {
+            Write-Host "Resolved Principal ID (object ID): $principalId"
+            azd env set AZURE_PRINCIPAL_ID $principalId
+          } else {
+            Write-Host "Warning: Could not determine an Azure AD principal object ID. AZURE_PRINCIPAL_ID will not be set."
+          }
+        } catch {
+          Write-Host "Error retrieving principal ID: $_"
+        }
+
+        # Get current user's public IP address
+        Write-Host "Retrieving current user's public IP..."
+        try {
+          $userIp = (Invoke-RestMethod -Uri "https://api.ipify.org" -UseBasicParsing).Trim()
+          
+          if (-not [string]::IsNullOrEmpty($userIp)) {
+            Write-Host "User IP Address: $userIp"
+            azd env set AZURE_USER_IP $userIp
+          } else {
+            Write-Host "Warning: Could not retrieve user IP address"
+          }
+        } catch {
+          Write-Host "Error retrieving IP address: $_"
+        }
+
+  postprovision:
+    posix:
+      shell: sh
+      interactive: true
+      run: |
+        echo "Infrastructure provisioned successfully!"
+
+        # Configure development access to Azure OpenAI (only runs locally)
+        ./scripts/postprovision.sh
+
+        # Get resource group and registry name
+        RESOURCE_GROUP=$(azd env get-values | grep AZURE_RESOURCE_GROUP | cut -d= -f2 | tr -d '"')
+        REGISTRY_NAME=$(azd env get-values | grep AZURE_CONTAINER_REGISTRY_NAME | cut -d= -f2 | tr -d '"')
+
+        echo "Resource Group: $RESOURCE_GROUP"
+        echo "Container Registry: $REGISTRY_NAME"
+
+        # Get the packaged image names from azd
+        # These will be available after azd package runs
+        AGENT_IMAGE=$(azd env get-values | grep SERVICE_AGENT_IMAGE_NAME | cut -d= -f2 | tr -d '"')
+        CHATAPI_IMAGE=$(azd env get-values | grep SERVICE_CHATAPI_IMAGE_NAME | cut -d= -f2 | tr -d '"')
+        WEB_IMAGE=$(azd env get-values | grep SERVICE_WEB_IMAGE_NAME | cut -d= -f2 | tr -d '"')
+
+        if [ -n "$AGENT_IMAGE" ] && [ -n "$CHATAPI_IMAGE" ] && [ -n "$WEB_IMAGE" ]; then
+          echo "Updating container apps with real images..."
+          echo "Agent: $AGENT_IMAGE"
+          echo "ChatApi: $CHATAPI_IMAGE"
+          echo "Web: $WEB_IMAGE"
+          
+          # Update container apps with the real images
+          echo "Updating agent container app..."
+          az containerapp update \
+            --name ca-agent-${AZURE_ENV_NAME} \
+            --resource-group $RESOURCE_GROUP \
+            --image ${REGISTRY_NAME}.azurecr.io/${AGENT_IMAGE} \
+            --output none || echo "Warning: Failed to update agent container app"
+          
+          echo "Updating chatapi container app..."
+          az containerapp update \
+            --name ca-chatapi-${AZURE_ENV_NAME} \
+            --resource-group $RESOURCE_GROUP \
+            --image ${REGISTRY_NAME}.azurecr.io/${CHATAPI_IMAGE} \
+            --output none || echo "Warning: Failed to update chatapi container app"
+          
+          echo "Updating web container app..."
+          az containerapp update \
+            --name ca-web-${AZURE_ENV_NAME} \
+            --resource-group $RESOURCE_GROUP \
+            --image ${REGISTRY_NAME}.azurecr.io/${WEB_IMAGE} \
+            --output none || echo "Warning: Failed to update web container app"
+          
+          echo "Container apps updated with real images!"
+        else
+          echo "Note: Real container images not yet available. They will be deployed during 'azd deploy'."
+        fi
+
+        WEB_URL=$(azd env get-values | grep WEB_APP_URL | cut -d= -f2 | tr -d '"')
+        echo "Web App URL: $WEB_URL"
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Infrastructure provisioned successfully!"
+
+        # Configure development access to Azure OpenAI (only runs locally)
+        .\scripts\postprovision.ps1
+
+        # Get resource group and registry name
+        $envValues = azd env get-values | Out-String
+        $resourceGroup = ($envValues | Select-String "AZURE_RESOURCE_GROUP=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+        $registryName = ($envValues | Select-String "AZURE_CONTAINER_REGISTRY_NAME=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+
+        Write-Host "Resource Group: $resourceGroup"
+        Write-Host "Container Registry: $registryName"
+
+        # Get the packaged image names from azd
+        $agentImage = ($envValues | Select-String "SERVICE_AGENT_IMAGE_NAME=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+        $chatapiImage = ($envValues | Select-String "SERVICE_CHATAPI_IMAGE_NAME=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+        $webImage = ($envValues | Select-String "SERVICE_WEB_IMAGE_NAME=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+
+        if (-not [string]::IsNullOrEmpty($agentImage) -and -not [string]::IsNullOrEmpty($chatapiImage) -and -not [string]::IsNullOrEmpty($webImage)) {
+          Write-Host "Updating container apps with real images..."
+          Write-Host "Agent: $agentImage"
+          Write-Host "ChatApi: $chatapiImage"
+          Write-Host "Web: $webImage"
+          
+          # Update container apps with the real images
+          Write-Host "Updating agent container app..."
+          az containerapp update `
+            --name "ca-agent-$env:AZURE_ENV_NAME" `
+            --resource-group $resourceGroup `
+            --image "$registryName.azurecr.io/$agentImage" `
+            --output none
+          if ($LASTEXITCODE -ne 0) { Write-Host "Warning: Failed to update agent container app" }
+          
+          Write-Host "Updating chatapi container app..."
+          az containerapp update `
+            --name "ca-chatapi-$env:AZURE_ENV_NAME" `
+            --resource-group $resourceGroup `
+            --image "$registryName.azurecr.io/$chatapiImage" `
+            --output none
+          if ($LASTEXITCODE -ne 0) { Write-Host "Warning: Failed to update chatapi container app" }
+          
+          Write-Host "Updating web container app..."
+          az containerapp update `
+            --name "ca-web-$env:AZURE_ENV_NAME" `
+            --resource-group $resourceGroup `
+            --image "$registryName.azurecr.io/$webImage" `
+            --output none
+          if ($LASTEXITCODE -ne 0) { Write-Host "Warning: Failed to update web container app" }
+          
+          Write-Host "Container apps updated with real images!"
+        } else {
+          Write-Host "Note: Real container images not yet available. They will be deployed during 'azd deploy'."
+        }
+
+        $webUrl = ($envValues | Select-String "WEB_APP_URL=(.+)" | ForEach-Object { $_.Matches.Groups[1].Value }).Trim('"')
+        Write-Host "Web App URL: $webUrl"
+
+  predeploy:
+    posix:
+      shell: sh
+      run: |
+        echo "Building container images..."
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Building container images..."
+
+  postdeploy:
+    posix:
+      shell: sh
+      run: |
+        echo "Deployment completed successfully!"
+        echo "Access your application at: $(azd env get-values | grep WEB_APP_URL | cut -d= -f2)"
+    windows:
+      shell: pwsh
+      run: |
+        Write-Host "Deployment completed successfully!"
+        $webUrl = azd env get-values | Select-String "WEB_APP_URL" | ForEach-Object { $_.ToString().Split("=")[1] }
+        Write-Host "Access your application at: $webUrl"

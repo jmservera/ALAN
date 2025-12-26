@@ -1,0 +1,337 @@
+.actions-list {
+  max-height: calc(100vh - 250px);
+  min-height: 300px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1024px) {
+  .actions-list {
+    max-height: calc(100vh - 200px);
+    min-height: 250px;
+  }
+}
+
+@media (max-width: 768px) {
+  .actions-list {
+    max-height: calc(50vh - 100px);
+    min-height: 200px;
+  }
+}
+
+.actions-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  overflow-y: auto;
+  flex: 1;
+  scroll-behavior: smooth;
+}
+
+.action-item {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1rem;
+  border-radius: 4px;
+  transition: box-shadow 0.2s;
+}
+
+.action-item:hover {
+  box-shadow: 0 2px 8px rgba(100, 108, 255, 0.2);
+}
+
+.action-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.action-status-icon {
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.action-name {
+  font-weight: 600;
+  flex: 1;
+}
+
+.tool-badge {
+  background-color: rgba(33, 150, 243, 0.2);
+  color: #2196f3;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid rgba(33, 150, 243, 0.3);
+}
+
+.action-time {
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.action-status {
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.action-result,
+.action-error {
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.action-error {
+  color: #ff6b6b;
+}
+
+.empty-message {
+  color: #888;
+  font-style: italic;
+  text-align: center;
+  padding: 2rem;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: #1e1e2e;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  max-width: 800px;
+  max-height: 90vh;
+  width: 90%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 768px) {
+  .action-item {
+    padding: 0.75rem;
+  }
+
+  .action-header {
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .action-status-icon {
+    font-size: 1rem;
+  }
+
+  .action-name {
+    font-size: 0.9rem;
+    flex: 1 1 100%;
+  }
+
+  .tool-badge {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+  }
+
+  .action-time {
+    font-size: 0.8rem;
+  }
+
+  .action-status {
+    font-size: 0.8rem;
+  }
+
+  .action-result,
+  .action-error {
+    font-size: 0.85rem;
+    padding: 0.4rem;
+  }
+
+  .modal-content {
+    width: 95%;
+    max-height: 95vh;
+    border-radius: 4px;
+  }
+
+  .modal-header,
+  .modal-body {
+    padding: 1rem;
+  }
+
+  .modal-header h3 {
+    font-size: 1.1rem;
+  }
+
+  .detail-section pre {
+    font-size: 0.85rem;
+    padding: 0.75rem;
+    max-height: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .action-item {
+    padding: 0.5rem;
+  }
+
+  .action-name {
+    font-size: 0.85rem;
+  }
+
+  .modal-header h3 {
+    font-size: 1rem;
+  }
+
+  .modal-close {
+    font-size: 1.5rem;
+    width: 28px;
+    height: 28px;
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 2rem;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  color: #fff;
+}
+
+.modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.detail-section {
+  margin-bottom: 1.5rem;
+}
+
+.detail-section strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #646cff;
+}
+
+.detail-section p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.detail-section pre {
+  background-color: rgba(0, 0, 0, 0.3);
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Tool Calls Styles */
+.tool-calls-list {
+  margin-top: 0.5rem;
+}
+
+.tool-call-item {
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+.tool-call-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.tool-status {
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+
+.tool-status.success {
+  color: #4caf50;
+}
+
+.tool-status.error {
+  color: #f44336;
+}
+
+.mcp-server {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.tool-duration {
+  margin-left: auto;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.tool-detail {
+  margin-top: 0.5rem;
+}
+
+.tool-detail strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.tool-detail pre {
+  background-color: rgba(0, 0, 0, 0.4);
+  padding: 0.5rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  max-height: 150px;
+  overflow-y: auto;
+  margin: 0;
+}

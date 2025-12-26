@@ -2,25 +2,91 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "build-agent",
-      "command": "dotnet",
-      "type": "process",
-      "args": [
-        "build",
-        "${workspaceFolder}/src/ALAN.Agent/ALAN.Agent.csproj",
-        "/property:GenerateFullPaths=true",
-        "/consoleloggerparameters:NoSummary;ForceNoAlign"
-      ],
-      "problemMatcher": "$msCompile",
+      "label": "start_azurite_blob",
+      "command": "${command:azurite.start_blob}",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "start_azurite_queue",
+      "command": "${command:azurite.start_queue}",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "stop_azurite_blob",
+      "command": "${command:azurite.close_blob}",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "stop_azurite_queue",
+      "command": "${command:azurite.close_queue}",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "start_azurite",
+      "dependsOn": ["start_azurite_blob", "start_azurite_queue"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+    {
+      "label": "stop_azurite",
+      "dependsOn": ["stop_azurite_blob", "stop_azurite_queue"],
+      "problemMatcher": [],
+      "isBackground": true,
+      "hide": true
+    },
+
+    {
+      "label": "npm-install-web",
+      "type": "shell",
+      "command": "npm",
+      "args": ["install"],
+      "options": {
+        "cwd": "${workspaceFolder}/src/ALAN.Web"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "build-web-frontend",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "build"],
+      "options": {
+        "cwd": "${workspaceFolder}/src/ALAN.Web"
+      },
+      "dependsOn": "npm-install-web",
+      "problemMatcher": [],
       "group": "build"
     },
     {
-      "label": "build-web",
+      "label": "dev-web-frontend",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "dev"],
+      "isBackground": true,
+      "options": {
+        "cwd": "${workspaceFolder}/src/ALAN.Web"
+      },
+      "dependsOn": "npm-install-web",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "build-solution",
       "command": "dotnet",
       "type": "process",
       "args": [
         "build",
-        "${workspaceFolder}/src/ALAN.Web/ALAN.Web.csproj",
+        "${workspaceFolder}/ALAN.sln",
         "/property:GenerateFullPaths=true",
         "/consoleloggerparameters:NoSummary;ForceNoAlign"
       ],
@@ -29,12 +95,26 @@
     },
     {
       "label": "build-all",
-      "dependsOn": ["build-agent", "build-web"],
-      "problemMatcher": "$msCompile",
+      "dependsOn": ["build-web-frontend", "build-solution"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "group": "build"
+    },
+    {
+      "label": "build-and-start-azurite",
+      "dependsOn": ["build-all", "start_azurite"],
+      "dependsOrder": "sequence",
+      "problemMatcher": [],
       "group": {
         "kind": "build",
         "isDefault": true
       }
+    },
+    {
+      "label": "stop-frontend-watch",
+      "type": "shell",
+      "command": "pkill -f \"next-server\"",
+      "problemMatcher": []
     }
   ]
 }

@@ -1,5 +1,6 @@
 using ALAN.Agent.Services;
 using ALAN.Agent.Services.MCP;
+using ALAN.Shared.Services;
 using ALAN.Shared.Services.Memory;
 using ALAN.Shared.Services.Queue;
 using ALAN.Shared.Models;
@@ -12,7 +13,6 @@ using Azure.AI.OpenAI;
 using Azure;
 using OpenAI;
 using Azure.Identity;
-using ChatResponse = ALAN.Shared.Models.ChatResponse;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -148,7 +148,7 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     // Get project URL for agent instructions
     var projectUrl = builder.Configuration["GITHUB_PROJECT_URL"]
                         ?? Environment.GetEnvironmentVariable("GITHUB_PROJECT_URL")
-                        ?? "jmservera/ALAN";
+                        ?? "jmserverorg/ALAN_WORK";
 
     // Render agent instructions from template
     var promptService = sp.GetRequiredService<IPromptService>();

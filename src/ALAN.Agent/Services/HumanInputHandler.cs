@@ -114,14 +114,6 @@ public class HumanInputHandler
                         continue;
                     }
 
-                    // Skip chat requests - they are handled by ChatApi
-                    if (input.Type == HumanInputType.ChatWithAgent)
-                    {
-                        _logger.LogWarning("Chat request in steering queue - deleting (should go to ChatApi)");
-                        await _humanInputQueue.DeleteAsync(msg.MessageId, msg.PopReceipt, cancellationToken);
-                        continue;
-                    }
-
                     // Process steering commands
                     await ProcessInputAsync(input, agent, cancellationToken);
                     
@@ -212,16 +204,6 @@ public class HumanInputHandler
                     InputId = input.Id,
                     Success = true,
                     Message = $"Goal updated to: {input.Content}"
-                };
-
-            case HumanInputType.ChatWithAgent:
-                // Chat requests are handled by ChatApi via WebSockets
-                _logger.LogWarning("Chat request should not be in steering queue - redirecting to ChatApi");
-                return new HumanInputResponse
-                {
-                    InputId = input.Id,
-                    Success = false,
-                    Message = "Chat requests should be sent to ChatApi WebSocket endpoint"
                 };
 
             default:

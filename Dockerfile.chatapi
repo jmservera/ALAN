@@ -1,0 +1,55 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# Copy solution and project files
+COPY ["ALAN.sln", "./"]
+
+# Copy all source files
+COPY . .
+
+# Restore dependencies
+RUN dotnet restore "ALAN.sln"
+
+# Build the ChatApi project
+WORKDIR "/src/src/ALAN.ChatApi"
+RUN dotnet build "ALAN.ChatApi.csproj" -c Release -o /app/build
+
+# Publish stage
+FROM build AS publish
+RUN dotnet publish "ALAN.ChatApi.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+# Final stage
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+WORKDIR /app
+
+# Install Azure CLI for AzureCliCredential support and procps for healthcheck
+RUN apt-get update && apt-get install -y curl gnupg lsb-release procps \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg \
+    && chmod go+r /etc/apt/keyrings/microsoft.gpg \
+    && echo "deb [arch=`dpkg --print-architecture` signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/azure-cli/ `lsb_release -cs` main" > /etc/apt/sources.list.d/azure-cli.list \
+    && apt-get update \
+    && apt-get install -y azure-cli \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser -u 1001 appuser \
+    && chown -R appuser:appuser /app
+
+# Copy application files with correct ownership
+COPY --from=publish --chown=appuser:appuser /app/publish .
+
+# Switch to non-root user
+USER appuser
+
+# Expose HTTP and HTTPS ports
+EXPOSE 5041
+EXPOSE 5042
+
+# Add healthcheck - check if dotnet process is running
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD pgrep -f "dotnet.*ALAN.ChatApi" > /dev/null || exit 1
+
+ENTRYPOINT ["dotnet", "ALAN.ChatApi.dll"]

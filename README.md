@@ -11,9 +11,11 @@ ALAN is a Semantic Kernel-based autonomous agent solution that runs continuously
 - **Observable**: Real-time web interface showing agent thoughts, actions, and current state
 - **Steerable**: Update the agent's directive through prompt configuration and REST API
 - **Human Steering**: REST API for controlling agent behavior (pause, resume, update goals)
+- **AG-UI Protocol**: Standard interface for agent communication compatible with AG-UI ecosystem
 - **Azure-Ready**: Deployable to Azure App Service with included deployment templates
 - **Real-time Updates**: Uses SignalR for live updates from the agent to the web interface
 - **Batch Learning**: Periodic consolidation of memories into actionable insights
+- **Resilient Architecture**: Automatic retry with exponential backoff for all Azure service calls
 
 ## Architecture
 
@@ -21,7 +23,8 @@ The solution consists of three main components:
 
 1. **ALAN.Agent**: A background service that runs the autonomous agent using Semantic Kernel
 2. **ALAN.Web**: An ASP.NET Core web application with SignalR for real-time observability
-3. **ALAN.Shared**: Shared models and contracts between agent and web interface
+3. **ALAN.ChatApi**: AG-UI compatible chat service for standardized agent communication
+4. **ALAN.Shared**: Shared models and contracts between agent and web interface
 
 ### Memory System
 
@@ -33,6 +36,16 @@ ALAN includes a sophisticated memory architecture:
 
 See [Memory Architecture Documentation](docs/MEMORY_ARCHITECTURE.md) for details.
 
+### AG-UI Protocol Support
+
+ALAN implements the AG-UI (Agent Gateway User Interface) protocol for standardized agent communication:
+- Compatible with AG-UI ecosystem tools and frameworks
+- Exposed via `/agui` endpoint in ALAN.ChatApi
+- Works with any AG-UI compatible client (JavaScript, Python, etc.)
+- Maintains backward compatibility with existing WebSocket API
+
+See [AG-UI Integration Documentation](docs/AGUI_INTEGRATION.md) for details.
+
 ### Human Steering
 
 Control the agent through REST API endpoints:
@@ -42,6 +55,15 @@ Control the agent through REST API endpoints:
 - Query current state
 
 See [Human Steering API Documentation](docs/HUMAN_STEERING_API.md) for details.
+
+### Resiliency
+
+ALAN implements comprehensive resiliency patterns:
+- **Automatic Retry**: Exponential backoff for transient failures
+- **Throttling Management**: Handles rate limits gracefully
+- **Detailed Logging**: Track retry attempts and service health
+
+See [Resiliency Documentation](docs/RESILIENCY.md) for details.
 
 ## Prerequisites
 
@@ -137,7 +159,7 @@ Then open your browser to `http://localhost:8080`
 1. Build Docker images:
    ```bash
    docker build -f Dockerfile.web -t alan-web .
-   docker build -f Dockerfile.agent -t alan-agent .
+   docker build -f Dockerfile.agent -t alanagent .
    ```
 
 2. Push images to Azure Container Registry or Docker Hub

@@ -1,6 +1,10 @@
+using ALAN.Shared.Services.Resilience;
+using ALAN.Shared.Utilities;
+using Azure.Identity;
 using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
 using Microsoft.Extensions.Logging;
+using Polly;
 using System.Text.Json;
 
 namespace ALAN.Shared.Services.Queue;
@@ -13,6 +17,7 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
 {
     private readonly QueueClient _queueClient;
     private readonly ILogger<AzureStorageQueueService<T>> _logger;
+    private readonly ResiliencePipeline _resiliencePipeline;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly SemaphoreSlim _initLock = new(1, 1);
     private bool _initialized;
@@ -23,8 +28,27 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
         string queueName,
         ILogger<AzureStorageQueueService<T>> logger)
     {
-        _queueClient = new QueueClient(connectionString, queueName);
         _logger = logger;
+        
+        // Check authentication method: AccountKey, SharedAccessSignature, UseDevelopmentStorage, or managed identity
+        if (connectionString.Contains("AccountKey=", StringComparison.OrdinalIgnoreCase) ||
+            connectionString.Contains("SharedAccessSignature=", StringComparison.OrdinalIgnoreCase) ||
+            connectionString.Contains("UseDevelopmentStorage=", StringComparison.OrdinalIgnoreCase))
+        {
+            // Traditional connection string (account key, SAS token, or Azurite)
+            _queueClient = new QueueClient(connectionString, queueName);
+            _logger.LogInformation("Using connection string authentication for Azure Storage Queue: {QueueName}", queueName);
+        }
+        else
+        {
+            // Extract account name and use managed identity
+            var accountName = AzureStorageConnectionStringHelper.ExtractAccountName(connectionString);
+            var queueEndpoint = new Uri($"https://{accountName}.queue.core.windows.net/{queueName}");
+            _queueClient = new QueueClient(queueEndpoint, new DefaultAzureCredential());
+            _logger.LogInformation("Using managed identity authentication for Azure Storage Queue: {QueueName} on {AccountName}", queueName, accountName);
+        }
+        
+        _resiliencePipeline = ResiliencePolicy.CreateStorageRetryPipeline(logger);
         _jsonOptions = new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
@@ -57,7 +81,9 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
                 return;
             }
 
-            await _queueClient.CreateIfNotExistsAsync(cancellationToken: cancellationToken);
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+                await _queueClient.CreateIfNotExistsAsync(cancellationToken: ct),
+                cancellationToken);
             _initialized = true;
         }
         finally
@@ -70,7 +96,9 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
     {
         await EnsureInitializedAsync(cancellationToken);
         var json = JsonSerializer.Serialize(message, _jsonOptions);
-        var response = await _queueClient.SendMessageAsync(json, cancellationToken);
+        var response = await _resiliencePipeline.ExecuteAsync(async ct =>
+            await _queueClient.SendMessageAsync(json, ct),
+            cancellationToken);
         _logger.LogDebug("Message sent to queue: {MessageId}", response.Value.MessageId);
     }
 
@@ -78,10 +106,12 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
     {
         await EnsureInitializedAsync(cancellationToken);
         var json = JsonSerializer.Serialize(message, _jsonOptions);
-        var response = await _queueClient.SendMessageAsync(
-            json,
-            visibilityTimeout: visibilityTimeout,
-            cancellationToken: cancellationToken);
+        var response = await _resiliencePipeline.ExecuteAsync(async ct =>
+            await _queueClient.SendMessageAsync(
+                json,
+                visibilityTimeout: visibilityTimeout,
+                cancellationToken: ct),
+            cancellationToken);
         _logger.LogDebug("Message sent to queue with {Timeout}s delay: {MessageId}",
             visibilityTimeout.TotalSeconds, response.Value.MessageId);
     }
@@ -93,9 +123,11 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
     {
         await EnsureInitializedAsync(cancellationToken);
         var timeout = visibilityTimeout ?? TimeSpan.FromSeconds(30);
-        var response = await _queueClient.ReceiveMessagesAsync(
-            maxMessages,
-            timeout,
+        var response = await _resiliencePipeline.ExecuteAsync(async ct =>
+            await _queueClient.ReceiveMessagesAsync(
+                maxMessages,
+                timeout,
+                ct),
             cancellationToken);
 
         var messages = new List<QueueMessage<T>>();
@@ -130,7 +162,9 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
     public async Task DeleteAsync(string messageId, string popReceipt, CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await _queueClient.DeleteMessageAsync(messageId, popReceipt, cancellationToken);
+        await _resiliencePipeline.ExecuteAsync(async ct =>
+            await _queueClient.DeleteMessageAsync(messageId, popReceipt, ct),
+            cancellationToken);
         _logger.LogDebug("Message deleted from queue: {MessageId}", messageId);
     }
 
@@ -141,25 +175,31 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
         CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await _queueClient.UpdateMessageAsync(
-            messageId,
-            popReceipt,
-            visibilityTimeout: visibilityTimeout,
-            cancellationToken: cancellationToken);
+        await _resiliencePipeline.ExecuteAsync(async ct =>
+            await _queueClient.UpdateMessageAsync(
+                messageId,
+                popReceipt,
+                visibilityTimeout: visibilityTimeout,
+                cancellationToken: ct),
+            cancellationToken);
         _logger.LogDebug("Message visibility updated: {MessageId}", messageId);
     }
 
     public async Task<int> GetApproximateCountAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        var properties = await _queueClient.GetPropertiesAsync(cancellationToken);
+        var properties = await _resiliencePipeline.ExecuteAsync(async ct =>
+            await _queueClient.GetPropertiesAsync(ct),
+            cancellationToken);
         return (int)properties.Value.ApproximateMessagesCount;
     }
 
     public async Task ClearAsync(CancellationToken cancellationToken = default)
     {
         await EnsureInitializedAsync(cancellationToken);
-        await _queueClient.ClearMessagesAsync(cancellationToken);
+        await _resiliencePipeline.ExecuteAsync(async ct =>
+            await _queueClient.ClearMessagesAsync(ct),
+            cancellationToken);
         _logger.LogInformation("Queue cleared");
     }
 

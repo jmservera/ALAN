@@ -1,0 +1,40 @@
+.agent-state .state-item {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.agent-state .state-label {
+  font-weight: 600;
+  color: #888;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+}
+
+.agent-state .state-value {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.agent-state .status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  color: white;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.agent-state .prompt-text {
+  background-color: rgba(0, 0, 0, 0.3);
+  padding: 1rem;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9rem;
+  margin: 0;
+}

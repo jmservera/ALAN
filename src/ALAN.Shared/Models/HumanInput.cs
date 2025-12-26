@@ -26,8 +26,7 @@ public enum HumanInputType
     AddGoal,
     RemoveGoal,
     QueryState,
-    ResetMemory,
-    ChatWithAgent
+    ResetMemory
 }
 
 /// <summary>

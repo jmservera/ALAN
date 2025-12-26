@@ -227,6 +227,7 @@ Configuration constants in `AutonomousAgent.cs`:
 - **Environment variables** - Use `NEXT_PUBLIC_` prefix for client-side variables
 - **API routes** - Use Next.js API routes sparingly, prefer dedicated backend services
 - **Rewrites** - Configure rewrites in next.config.ts for API proxying
+- **Commit package-lock.json** - Always track package-lock.json for reproducible builds (only ignore for npm libraries)
 
 #### Security
 

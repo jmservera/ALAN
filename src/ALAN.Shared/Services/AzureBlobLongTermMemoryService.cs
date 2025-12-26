@@ -1,5 +1,6 @@
 using ALAN.Shared.Models;
 using ALAN.Shared.Services.Resilience;
+using ALAN.Shared.Utilities;
 using Azure.Identity;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -48,7 +49,7 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
             else
             {
                 // Extract account name and use managed identity
-                var accountName = ExtractAccountName(connectionString);
+                var accountName = AzureStorageConnectionStringHelper.ExtractAccountName(connectionString);
                 var blobEndpoint = new Uri($"https://{accountName}.blob.core.windows.net");
                 blobServiceClient = new BlobServiceClient(blobEndpoint, new DefaultAzureCredential());
                 _logger.LogInformation("Using managed identity authentication for Azure Blob Storage: {AccountName}", accountName);
@@ -62,21 +63,6 @@ public class AzureBlobLongTermMemoryService : ILongTermMemoryService
             _logger.LogError(ex, "Failed to create Azure Blob Storage client. This service will not be functional.");
             _containerClient = null!;
         }
-    }
-
-    private static string ExtractAccountName(string connectionString)
-    {
-        // Parse connection string to extract AccountName
-        var parts = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var part in parts)
-        {
-            var keyValue = part.Split('=', 2);
-            if (keyValue.Length == 2 && keyValue[0].Trim().Equals("AccountName", StringComparison.OrdinalIgnoreCase))
-            {
-                return keyValue[1].Trim();
-            }
-        }
-        throw new ArgumentException("Connection string must contain AccountName for managed identity authentication");
     }
 
     private async Task<bool> EnsureInitializedAsync(CancellationToken cancellationToken = default)

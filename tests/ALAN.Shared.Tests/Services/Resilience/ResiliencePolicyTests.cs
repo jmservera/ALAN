@@ -196,7 +196,7 @@ public class ResiliencePolicyTests
         int attemptCount = 0;
 
         // Act & Assert
-        await Assert.ThrowsAsync<RequestFailedException>( async()=> await ExecuteWithFakeTimeAsync(
+        await Assert.ThrowsAsync<RequestFailedException>(async () => await ExecuteWithFakeTimeAsync(
             pipeline,
             ct =>
             {

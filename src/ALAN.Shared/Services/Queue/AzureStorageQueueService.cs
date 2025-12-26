@@ -1,4 +1,5 @@
 using ALAN.Shared.Services.Resilience;
+using ALAN.Shared.Utilities;
 using Azure.Identity;
 using Azure.Storage.Queues;
 using Azure.Storage.Queues.Models;
@@ -41,7 +42,7 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
         else
         {
             // Extract account name and use managed identity
-            var accountName = ExtractAccountName(connectionString);
+            var accountName = AzureStorageConnectionStringHelper.ExtractAccountName(connectionString);
             var queueEndpoint = new Uri($"https://{accountName}.queue.core.windows.net/{queueName}");
             _queueClient = new QueueClient(queueEndpoint, new DefaultAzureCredential());
             _logger.LogInformation("Using managed identity authentication for Azure Storage Queue: {QueueName} on {AccountName}", queueName, accountName);
@@ -55,21 +56,6 @@ public class AzureStorageQueueService<T> : IMessageQueue<T>, IDisposable where T
         };
 
         _logger.LogInformation("Azure Storage Queue Service created for queue: {QueueName}", queueName);
-    }
-
-    private static string ExtractAccountName(string connectionString)
-    {
-        // Parse connection string to extract AccountName
-        var parts = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var part in parts)
-        {
-            var keyValue = part.Split('=', 2);
-            if (keyValue.Length == 2 && keyValue[0].Trim().Equals("AccountName", StringComparison.OrdinalIgnoreCase))
-            {
-                return keyValue[1].Trim();
-            }
-        }
-        throw new ArgumentException("Connection string must contain AccountName for managed identity authentication");
     }
 
     /// <summary>

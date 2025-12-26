@@ -1,12 +1,14 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import './HumanInputPanel.css';
-
+import { useState } from "react";
+import "./HumanInputPanel.css";
 
 function HumanInputPanel() {
-  const [input, setInput] = useState('');
-  const [status, setStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [input, setInput] = useState("");
+  const [status, setStatus] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -14,13 +16,13 @@ function HumanInputPanel() {
 
     try {
       const response = await fetch(`/api/input`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          type: 'UserInput',
-          content: input,
+          Type: "UpdatePrompt",
+          Content: input,
         }),
       });
 
@@ -28,14 +30,14 @@ function HumanInputPanel() {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      setStatus({ type: 'success', message: 'Input sent successfully!' });
-      setInput('');
-      
+      setStatus({ type: "success", message: "Input sent successfully!" });
+      setInput("");
+
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
-      setStatus({ 
-        type: 'error', 
-        message: err instanceof Error ? err.message : 'Failed to send input' 
+      setStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to send input",
       });
     }
   };
@@ -43,19 +45,19 @@ function HumanInputPanel() {
   const handlePause = async () => {
     try {
       const response = await fetch(`/api/pause`, {
-        method: 'POST',
+        method: "POST",
       });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      setStatus({ type: 'success', message: 'Pause command sent!' });
+      setStatus({ type: "success", message: "Pause command sent!" });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
-      setStatus({ 
-        type: 'error', 
-        message: err instanceof Error ? err.message : 'Failed to pause agent' 
+      setStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to pause agent",
       });
     }
   };
@@ -63,19 +65,19 @@ function HumanInputPanel() {
   const handleResume = async () => {
     try {
       const response = await fetch(`/api/resume`, {
-        method: 'POST',
+        method: "POST",
       });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      setStatus({ type: 'success', message: 'Resume command sent!' });
+      setStatus({ type: "success", message: "Resume command sent!" });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
-      setStatus({ 
-        type: 'error', 
-        message: err instanceof Error ? err.message : 'Failed to resume agent' 
+      setStatus({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to resume agent",
       });
     }
   };
@@ -83,19 +85,22 @@ function HumanInputPanel() {
   const handleBatchLearning = async () => {
     try {
       const response = await fetch(`/api/batch-learning`, {
-        method: 'POST',
+        method: "POST",
       });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      setStatus({ type: 'success', message: 'Batch learning triggered!' });
+      setStatus({ type: "success", message: "Batch learning triggered!" });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
-      setStatus({ 
-        type: 'error', 
-        message: err instanceof Error ? err.message : 'Failed to trigger batch learning' 
+      setStatus({
+        type: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Failed to trigger batch learning",
       });
     }
   };
@@ -103,19 +108,25 @@ function HumanInputPanel() {
   const handleMemoryConsolidation = async () => {
     try {
       const response = await fetch(`/api/memory-consolidation`, {
-        method: 'POST',
+        method: "POST",
       });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      setStatus({ type: 'success', message: 'Memory consolidation triggered!' });
+      setStatus({
+        type: "success",
+        message: "Memory consolidation triggered!",
+      });
       setTimeout(() => setStatus(null), 3000);
     } catch (err) {
-      setStatus({ 
-        type: 'error', 
-        message: err instanceof Error ? err.message : 'Failed to trigger memory consolidation' 
+      setStatus({
+        type: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Failed to trigger memory consolidation",
       });
     }
   };
@@ -123,7 +134,7 @@ function HumanInputPanel() {
   return (
     <div className="panel human-input-panel">
       <h2>Human Steering</h2>
-      
+
       <form onSubmit={handleSubmit} className="input-form">
         <textarea
           value={input}
@@ -139,7 +150,11 @@ function HumanInputPanel() {
           <button type="button" onClick={handlePause} className="btn-secondary">
             ⏸️ Pause Agent
           </button>
-          <button type="button" onClick={handleResume} className="btn-secondary">
+          <button
+            type="button"
+            onClick={handleResume}
+            className="btn-secondary"
+          >
             ▶️ Resume Agent
           </button>
         </div>
@@ -148,19 +163,25 @@ function HumanInputPanel() {
       <div className="agent-controls">
         <h3>Advanced Controls</h3>
         <div className="button-group">
-          <button type="button" onClick={handleBatchLearning} className="btn-advanced">
+          <button
+            type="button"
+            onClick={handleBatchLearning}
+            className="btn-advanced"
+          >
             📚 Trigger Batch Learning
           </button>
-          <button type="button" onClick={handleMemoryConsolidation} className="btn-advanced">
+          <button
+            type="button"
+            onClick={handleMemoryConsolidation}
+            className="btn-advanced"
+          >
             🧠 Consolidate Memory
           </button>
         </div>
       </div>
 
       {status && (
-        <div className={`status-message ${status.type}`}>
-          {status.message}
-        </div>
+        <div className={`status-message ${status.type}`}>{status.message}</div>
       )}
     </div>
   );

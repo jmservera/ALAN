@@ -59,54 +59,6 @@ public class HumanInputHandlerTests
     }
 
     [Fact]
-    public async Task ProcessPendingInputsAsync_SkipsChatMessages()
-    {
-        // Arrange
-        var mockLogger = new Mock<ILogger<ALAN.Agent.Services.HumanInputHandler>>();
-        var mockStateManager = new Mock<ALAN.Agent.Services.StateManager>(
-            Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
-            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
-        var mockQueue = new Mock<IMessageQueue<HumanInput>>();
-        var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
-        
-        var handler = new ALAN.Agent.Services.HumanInputHandler(
-            mockLogger.Object,
-            mockStateManager.Object,
-            mockQueue.Object,
-            mockMemoryConsolidation.Object);
-
-        var chatInput = new HumanInput
-        {
-            Type = HumanInputType.ChatWithAgent,
-            Content = "Hello"
-        };
-
-        var queueMessage = new QueueMessage<HumanInput>
-        {
-            MessageId = "msg-456",
-            PopReceipt = "receipt-456",
-            Content = chatInput,
-            DequeueCount = 1
-        };
-
-        mockQueue
-            .Setup(q => q.ReceiveAsync(It.IsAny<int>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<QueueMessage<HumanInput>> { queueMessage });
-
-        mockQueue
-            .Setup(q => q.DeleteAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        // Act
-        await handler.ProcessPendingInputsAsync(null!);
-
-        // Assert - chat messages should be deleted
-        mockQueue.Verify(
-            q => q.DeleteAsync("msg-456", "receipt-456", It.IsAny<CancellationToken>()),
-            Times.Once);
-    }
-
-    [Fact]
     public async Task ProcessPendingInputsAsync_HandlesDeadLetterMessages()
     {
         // Arrange

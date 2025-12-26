@@ -83,6 +83,7 @@ param chatApiContainerImage string = 'mcr.microsoft.com/azuredocs/containerapps-
 param webContainerImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
 @description('GitHub MCP PAT for the agent to access repositories')
+@secure()
 param github_mcp_pat string
 @description('GitHub project URL for the agent to access repositories')
 param github_project_url string = 'jmservera/ALAN'

@@ -52,61 +52,78 @@ public class McpConfigurationService
             List<AITool> tools = [];
             foreach (var server in config.Mcp.Servers)
             {
-                _logger.LogInformation("Configuring MCP server: {ServerName}", server.Key);
-                _logger.LogInformation("  Command: {Command}", server.Value.Command);
-                _logger.LogInformation("  Args: {Args}", string.Join(" ", server.Value.Args ?? new List<string>()));
+                try{
+                    _logger.LogInformation("Configuring MCP server: {ServerName}", server.Key);
+                    _logger.LogInformation("  Command: {Command}", server.Value.Command);
+                    _logger.LogInformation("  Args: {Args}", string.Join(" ", server.Value.Args ?? []));
 
-                if (server.Value.Type == "http" && !string.IsNullOrEmpty(server.Value.Url))
-                {
-                    _logger.LogInformation("  Type: {Type}", server.Value.Type);
-                    _logger.LogInformation("  URL: {Url}", server.Value.Url);
-
-
-                    string? patToken = null;
-                    if (!string.IsNullOrEmpty(server.Value.Pat))
+                    if (server.Value.Type == "http" && !string.IsNullOrEmpty(server.Value.Url))
                     {
-                        if (server.Value.Pat.StartsWith("$"))
+                        _logger.LogInformation("  Type: {Type}", server.Value.Type);
+                        _logger.LogInformation("  URL: {Url}", server.Value.Url);
+
+
+                        string? patToken = null;
+                        if (!string.IsNullOrEmpty(server.Value.Pat))
                         {
-                            var envVarName = server.Value.Pat.Substring(1);
-                            var patValue = Environment.GetEnvironmentVariable(envVarName);
-                            if (!string.IsNullOrEmpty(patValue))
+                            if (server.Value.Pat.StartsWith('$'))
                             {
-                                patToken = patValue;
+                                var envVarName = server.Value.Pat[1..];
+                                var patValue = Environment.GetEnvironmentVariable(envVarName);
+                                if (!string.IsNullOrEmpty(patValue))
+                                {
+                                    patToken = patValue;
+                                }
+                                else
+                                {
+                                    _logger.LogWarning("  ⚠ PAT environment variable '{EnvVar}' not set for server '{ServerName}'",
+                                        envVarName, server.Key);
+                                }
+                            }
+                            else
+                            {
+                                patToken = server.Value.Pat;
                             }
                         }
-                        else
-                        {
-                            patToken = server.Value.Pat;
-                        }
+
+                        var clientTransport = new HttpClientTransport(
+                            new()
+                            {
+                                Endpoint = new Uri(server.Value.Url),
+                                AdditionalHeaders = new Dictionary<string, string>
+                                {
+                                    { "User-Agent", "ALAN.Agent/MCPClient" },
+                                    {"Authorization", !string.IsNullOrEmpty(patToken) ? $"Bearer {patToken}" : string.Empty }
+                                }
+                            }
+                        );
+
+                        var mcpClient = await McpClient.CreateAsync(clientTransport);
+                        var toolsFromServer = await mcpClient.ListToolsAsync();
+
+                        tools.AddRange(toolsFromServer);
+                        _logger.LogDebug("  ✓ Retrieved {ToolCount} tools from server '{ServerName}'",
+                            toolsFromServer.Count, server.Key);
+                        _logger.LogDebug("  Tools: {ToolNames}",
+                            string.Join(", ", toolsFromServer.Select(t => t.Name)));
+
+                        _logger.LogInformation("  ✓ MCP tool '{ServerName}' added successfully", server.Key);
                     }
-
-                    var clientTransport = new HttpClientTransport(
-                        new()
-                        {
-                            Endpoint = new Uri(server.Value.Url),
-                            AdditionalHeaders = new Dictionary<string, string>
-                            {
-                                { "User-Agent", "ALAN.Agent/MCPClient" },
-                                {"Authorization", !string.IsNullOrEmpty(patToken) ? $"Bearer {patToken}" : string.Empty }
-                            }
-                        }
-                    );
-
-                    var mcpClient = await McpClient.CreateAsync(clientTransport);
-                    var toolsFromServer = await mcpClient.ListToolsAsync();
-
-                    tools.AddRange(toolsFromServer);
-
-                    _logger.LogInformation("  ✓ MCP tool '{ServerName}' added successfully", server.Key);
                 }
-            }
-
-            _logger.LogInformation("✓ MCP configuration loaded successfully: {ToolCount} tools from {ServerCount} servers",
-                tools.Count, config.Mcp.Servers.Count);
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "  ✗ Failed to configure MCP server '{ServerName}'", server.Key);
+                }
+            }           
 
             if (tools.Count == 0)
             {
                 _logger.LogWarning("⚠ No MCP tools were created! Check server configurations.");
+            }
+            else
+            {
+                 _logger.LogInformation("✓ MCP configuration loaded successfully: {ToolCount} tools from {ServerCount} servers",
+                tools.Count, config.Mcp.Servers.Count);
             }
 
             return tools;

@@ -1,8 +1,11 @@
 using ALAN.Shared.Models;
+using ALAN.Shared.Services;
 using ALAN.Shared.Services.Memory;
+using ALAN.Shared.Services.Resilience;
 using Microsoft.Extensions.AI;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
+using Polly;
 using System.Text.Json;
 
 namespace ALAN.Agent.Services;
@@ -32,6 +35,7 @@ public class AutonomousAgent
     private readonly BatchLearningService _batchLearningService;
     private readonly HumanInputHandler _humanInputHandler;
     private readonly IPromptService _promptService;
+    private readonly ResiliencePipeline _resiliencePipeline;
     private bool _isRunning;
     private bool _isPaused;
     private string _receivedDirective = "Think about how to improve yourself.";
@@ -40,6 +44,7 @@ public class AutonomousAgent
     private volatile List<MemoryEntry> _recentMemories = new();
     private DateTime _lastMemoryLoad = DateTime.MinValue;
     private string _currentDirective = "";
+    private int _currentMemoryContextSize = MAX_MEMORY_CONTEXT_SIZE;
 
     public AutonomousAgent(
         AIAgent agent,
@@ -62,6 +67,7 @@ public class AutonomousAgent
         _batchLearningService = batchLearningService;
         _humanInputHandler = humanInputHandler;
         _promptService = promptService;
+        _resiliencePipeline = ResiliencePolicy.CreateOpenAIRetryPipeline(logger);
         _humanInputHandler.SetAgent(this);
     }
 
@@ -361,75 +367,124 @@ public class AutonomousAgent
             _logger.LogInformation("Agent observed: {Content}", observation.Content);
         }
 
-        // Get AI response
-        var prompt = _promptService.RenderTemplate("agent-thinking", new
+        // Get AI response - retry with reduced context if needed
+        const int minMemoryContextSize = 5;
+        int retryAttempt = 0;
+        const int maxRetries = 3;
+        
+        while (retryAttempt <= maxRetries)
         {
-            directive = _receivedDirective,
-            memoryCount = _recentMemories.Count,
-            memoryContext = BuildMemoryContext()
-        });
-        _logger.LogTrace("Agent prompt: {Prompt}", prompt.Length > 500 ? string.Concat(prompt.AsSpan(0, 500), "...") : prompt);
-        try
-        {
-            var result = await _agent.RunAsync(prompt, _thread, cancellationToken: cancellationToken);
-            var response = result.Text ?? result.ToString();
-
-            // Extract tool call information (minimal metadata)
-            var toolCalls = ExtractToolCalls(result);
-            if (toolCalls != null && toolCalls.Count > 0)
+            var prompt = _promptService.RenderTemplate("agent-thinking", new
             {
-                _logger.LogInformation("Action used {Count} tool(s): {Tools}",
-                    toolCalls.Count,
-                    string.Join(", ", toolCalls.Select(t => t.ToolName)));
+                directive = _receivedDirective,
+                memoryCount = _recentMemories.Count,
+                memoryContext = BuildMemoryContext(_currentMemoryContextSize)
+            });
+            _logger.LogTrace("Agent prompt: {Prompt}", prompt.Length > 500 ? string.Concat(prompt.AsSpan(0, 500), "...") : prompt);
+            
+            try
+            {
+                var result = await _resiliencePipeline.ExecuteAsync(async ct =>
+                    await _agent.RunAsync(prompt, _thread, cancellationToken: ct),
+                    cancellationToken);
+                var response = result.Text ?? result.ToString();
+
+                // Success - restore full context size for next iteration
+                if (_currentMemoryContextSize < MAX_MEMORY_CONTEXT_SIZE)
+                {
+                    _logger.LogInformation("Context length issue resolved. Restoring memory context to {Size}", MAX_MEMORY_CONTEXT_SIZE);
+                    _currentMemoryContextSize = MAX_MEMORY_CONTEXT_SIZE;
+                }
+
+                // Extract tool call information (minimal metadata)
+                var toolCalls = ExtractToolCalls(result);
+                if (toolCalls != null && toolCalls.Count > 0)
+                {
+                    _logger.LogInformation("Action used {Count} tool(s): {Tools}",
+                        toolCalls.Count,
+                        string.Join(", ", toolCalls.Select(t => t.ToolName)));
+                }
+                else
+                {
+                    _logger.LogInformation("No tool calls detected in action execution");
+                }
+                // Record reasoning
+                var reasoning = new AgentThought
+                {
+                    Type = ThoughtType.Reasoning,
+                    Content = response,
+                    ToolCalls = toolCalls
+                };
+                _stateManager.AddThought(reasoning);
+                _logger.LogTrace("Agent reasoning: {Content}", response);
+
+                // Parse and execute action
+                await ParseAndExecuteActionAsync(response, cancellationToken);
+                break; // Success - exit retry loop
             }
-            else
+            catch (System.ClientModel.ClientResultException clientEx) when (clientEx.Status == 400 && clientEx.Message.Contains("context_length_exceeded"))
             {
-                _logger.LogInformation("No tool calls detected in action execution");
+                retryAttempt++;
+                
+                if (_currentMemoryContextSize > minMemoryContextSize && retryAttempt <= maxRetries)
+                {
+                    // Reduce memory context size by half
+                    var newSize = Math.Max(minMemoryContextSize, _currentMemoryContextSize / 2);
+                    _logger.LogWarning("Context length exceeded ({CurrentSize} memories). Reducing to {NewSize} and retrying (attempt {Attempt}/{MaxRetries})",
+                        _currentMemoryContextSize, newSize, retryAttempt, maxRetries);
+                    _currentMemoryContextSize = newSize;
+                    continue; // Retry with reduced context
+                }
+                
+                _logger.LogError(clientEx, "Context length exceeded even with minimal memory context ({Size}). Status: {Status}",
+                    _currentMemoryContextSize, clientEx.Status);
+
+                // Store context overflow errors for learning
+                var errorMemory = new MemoryEntry
+                {
+                    Type = MemoryType.Error,
+                    Content = $"Context length exceeded with {_currentMemoryContextSize} memories. Model limit reached.",
+                    Summary = "Context overflow - need to reduce memory or response length",
+                    Importance = 0.8,
+                    Tags = ["error", "context-overflow", "azure-openai"]
+                };
+                await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
+                break; // Cannot retry further
             }
-            // Record reasoning
-            var reasoning = new AgentThought
+            catch (System.ClientModel.ClientResultException clientEx)
             {
-                Type = ThoughtType.Reasoning,
-                Content = response,
-                ToolCalls = toolCalls
-            };
-            _stateManager.AddThought(reasoning);
-            _logger.LogTrace("Agent reasoning: {Content}", response);
+                _logger.LogError(clientEx, "Azure OpenAI client error during thinking process. Status: {Status}",
+                    clientEx.Status);
 
-            // Parse and execute action
-            await ParseAndExecuteActionAsync(response, cancellationToken);
-        }
-        catch (System.ClientModel.ClientResultException clientEx)
-        {
-            _logger.LogError(clientEx, "Azure OpenAI client error during thinking process. Status: {Status}",
-                clientEx.Status);
-
-            // Store API errors for learning
-            var errorMemory = new MemoryEntry
+                // Store API errors for learning
+                var errorMemory = new MemoryEntry
+                {
+                    Type = MemoryType.Error,
+                    Content = $"Azure OpenAI API error (Status {clientEx.Status}): {clientEx.Message}",
+                    Summary = "API communication error",
+                    Importance = 0.6,
+                    Tags = ["error", "api", "azure-openai"]
+                };
+                await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
+                break; // Don't retry for other errors
+            }
+            catch (Exception ex)
             {
-                Type = MemoryType.Error,
-                Content = $"Azure OpenAI API error (Status {clientEx.Status}): {clientEx.Message}",
-                Summary = "API communication error",
-                Importance = 0.6,
-                Tags = ["error", "api", "azure-openai"]
-            };
-            await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during thinking process");
+                _logger.LogError(ex, "Error during thinking process");
 
-            // Store critical errors directly to long-term memory for persistence
-            // (errors are important enough to skip short-term storage)
-            var errorMemory = new MemoryEntry
-            {
-                Type = MemoryType.Error,
-                Content = $"Error during thinking: {ex.Message}",
-                Summary = "Agent error",
-                Importance = 0.7,
-                Tags = ["error", "system"]
-            };
-            await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
+                // Store critical errors directly to long-term memory for persistence
+                // (errors are important enough to skip short-term storage)
+                var errorMemory = new MemoryEntry
+                {
+                    Type = MemoryType.Error,
+                    Content = $"Error during thinking: {ex.Message}",
+                    Summary = "Agent error",
+                    Importance = 0.7,
+                    Tags = ["error", "system"]
+                };
+                await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
+                break; // Don't retry on general errors
+            }
         }
     }
 
@@ -480,7 +535,9 @@ public class AutonomousAgent
                             extra = actionPlan.Extra
                         });
                         // Simulate action execution
-                        var result = await _agent.RunAsync(prompt, _thread, cancellationToken: cancellationToken);
+                        var result = await _resiliencePipeline.ExecuteAsync(async ct =>
+                            await _agent.RunAsync(prompt, _thread, cancellationToken: ct),
+                            cancellationToken);
 
                         // Extract tool calls from action execution
                         var toolCalls = ExtractToolCalls(result);
@@ -632,7 +689,7 @@ public class AutonomousAgent
     /// Builds a formatted string containing relevant memory context for the current iteration.
     /// This provides the agent with accumulated knowledge from previous iterations.
     /// </summary>
-    internal string BuildMemoryContext()
+    internal string BuildMemoryContext(int maxMemories = MAX_MEMORY_CONTEXT_SIZE)
     {
         if (!_recentMemories.Any())
         {
@@ -640,9 +697,12 @@ public class AutonomousAgent
         }
 
         var context = new System.Text.StringBuilder();
+        
+        // Limit the total number of memories if context size needs to be reduced
+        var memoriesToUse = _recentMemories.Take(maxMemories).ToList();
 
         // Group memories by type for better organization
-        var groupedMemories = _recentMemories.GroupBy(m => m.Type).OrderByDescending(g => g.Key switch
+        var groupedMemories = memoriesToUse.GroupBy(m => m.Type).OrderByDescending(g => g.Key switch
         {
             MemoryType.Learning => 5,
             MemoryType.Reflection => 4,

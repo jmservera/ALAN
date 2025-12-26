@@ -45,13 +45,25 @@ cd src/ALAN.Agent
 dotnet run
 ```
 
-**Terminal 2 - Web Interface:**
+**Terminal 2 - ChatApi (Optional - for AG-UI support):**
+```bash
+cd src/ALAN.ChatApi
+dotnet run
+```
+
+**Terminal 3 - Web Interface:**
 ```bash
 cd src/ALAN.Web
+# Build frontend (first time only, or when frontend code changes)
+npm install
+npm run build
+# Run the web server
 dotnet run
 ```
 
 Then open your browser to: `https://localhost:5001` (or the URL shown in terminal)
+
+> **Note**: The Chat page now uses CopilotKit for a standard AG-UI interface. You must build the frontend before running the web application (see `src/ALAN.Web/README.md` for details).
 
 ## What You'll See
 

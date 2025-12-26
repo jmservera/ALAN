@@ -8,7 +8,6 @@ obj/
 
 # Visual Studio
 .vs/
-.vscode/
 
 # Rider
 .idea/
@@ -29,11 +28,16 @@ Thumbs.db
 
 # Node modules (if any)
 node_modules/
-package-lock.json
 
 # Build artifacts
 publish/
 dist/
+wwwroot/js/chat-app.bundle.js
+wwwroot/js/chat-app.bundle.js.map
+wwwroot/dist/
+
+# TypeScript build info
+*.tsbuildinfo
 
 # Temporary files
 *.tmp
@@ -46,3 +50,13 @@ src/ALAN.Web/wwwroot/lib/
 __azurite_*
 __*__/
 AzuriteConfig
+
+# Azure Developer CLI
+.azure/
+
+# Azure deployment outputs
+*.env.azure
+
+.venv
+results.sarif
+checkov_report.*

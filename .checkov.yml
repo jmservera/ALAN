@@ -1,0 +1,37 @@
+# Checkov configuration for ALAN infrastructure security scanning
+# https://www.checkov.io/2.Basics/CLI%20Command%20Reference.html
+
+framework:
+  - bicep
+  - arm
+  - dockerfile
+  - yaml
+  - github_actions
+# Directories to scan
+directory:
+  - .
+
+# Skip downloading external checks (for offline scanning)
+skip-download: true
+
+# Output format
+output: [cli, junitxml, sarif]
+
+output-file-path: console,checkov_report.xml,checkov_report.sarif
+
+# Compact output (less verbose)
+compact: true
+
+# Soft fail mode - don't fail CI/CD on security issues, just report them
+soft-fail: false
+
+# Skip specific checks (if needed, can be customized per environment)
+# skip-check:
+#   - CKV_AZURE_1  # Example: Skip a specific check
+
+# Check severity thresholds
+# Set minimum severity level: CRITICAL, HIGH, MEDIUM, LOW
+# check-severity: HIGH
+
+# Enable supply chain security checks
+# download-external-modules: false

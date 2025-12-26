@@ -1,4 +1,5 @@
 using ALAN.Agent.Services;
+using ALAN.Shared.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;

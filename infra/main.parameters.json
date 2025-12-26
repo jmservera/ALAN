@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID=}"
+    },
+    "principalType": {
+      "value": "${AZURE_PRINCIPAL_TYPE=User}"
+    },
+    "userIpAddress": {
+      "value": "${AZURE_USER_IP=}"
+    },
+    "openAiDeploymentName": {
+      "value": "${AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini}"
+    },
+    "openAiModelName": {
+      "value": "${AZURE_OPENAI_MODEL_NAME=gpt-4o-mini}"
+    },
+    "openAiModelVersion": {
+      "value": "${AZURE_OPENAI_MODEL_VERSION=2024-07-18}"
+    },
+    "openAiModelCapacity": {
+      "value": "${AZURE_OPENAI_MODEL_CAPACITY=100}"
+    },
+    "agentMaxLoopsPerDay": {
+      "value": "${AGENT_MAX_LOOPS_PER_DAY=4000}"
+    },
+    "agentMaxTokensPerDay": {
+      "value": "${AGENT_MAX_TOKENS_PER_DAY=8000000}"
+    },
+    "agentThinkInterval": {
+      "value": "${AGENT_THINK_INTERVAL=5}"
+    },
+    "enableZoneRedundancy": {
+      "value": "${ENABLE_ZONE_REDUNDANCY=false}"
+    },
+    "enableAutoScaling": {
+      "value": "${ENABLE_AUTO_SCALING=false}"
+    },
+    "minReplicas": {
+      "value": "${MIN_REPLICAS=1}"
+    },
+    "maxReplicas": {
+      "value": "${MAX_REPLICAS=10}"
+    },
+    "agentContainerImage": {
+      "value": "${SERVICE_AGENT_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+    },
+    "chatApiContainerImage": {
+      "value": "${SERVICE_CHATAPI_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+    },
+    "webContainerImage": {
+      "value": "${SERVICE_WEB_IMAGE_NAME=mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+    },
+    "github_mcp_pat": {
+      "value": "${GITHUB_MCP_PAT}"
+    },
+    "github_project_url": {
+      "value": "${GITHUB_PROJECT_URL=jmserverorg/ALAN_WORK}"
+    }
+  }
+}

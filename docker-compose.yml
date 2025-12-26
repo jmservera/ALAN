@@ -91,7 +91,6 @@ services:
       - PORT=5269
       - CHATAPI_URL=http://chatapi:5041/api
       - AGENT_URL=http://chatapi:5041/copilotkit
-      - NEXT_PUBLIC_CHATAPI_URL=http://localhost:5041/api
     depends_on:
       - chatapi
     networks:

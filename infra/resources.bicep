@@ -621,10 +621,6 @@ module webApp './modules/container-app.bicep' = {
         value: 'https://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/api'
       }
       {
-        name: 'NEXT_PUBLIC_CHATAPI_URL'
-        value: 'https://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/api'
-      }
-      {
         name: 'AGENT_URL'
         value: 'https://${abbrs.appContainerApps}chatapi-${environmentName}.internal.${containerAppsEnvironment.outputs.defaultDomain}/copilotkit'
       }

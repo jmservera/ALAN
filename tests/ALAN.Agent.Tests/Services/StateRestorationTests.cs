@@ -5,6 +5,7 @@ using ALAN.Shared.Services.Queue;
 using Microsoft.Extensions.Logging;
 using Microsoft.Agents.AI;
 using Moq;
+using ALAN.Shared.Services;
 
 namespace ALAN.Agent.Tests.Services;
 

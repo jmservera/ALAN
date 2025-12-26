@@ -148,7 +148,7 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     // Get project URL for agent instructions
     var projectUrl = builder.Configuration["GITHUB_PROJECT_URL"]
                         ?? Environment.GetEnvironmentVariable("GITHUB_PROJECT_URL")
-                        ?? "jmservera/ALAN";
+                        ?? "jmserverorg/ALAN_WORK";
 
     // Render agent instructions from template
     var promptService = sp.GetRequiredService<IPromptService>();

@@ -5,14 +5,19 @@
   "files.watcherExclude": {
     "**/node_modules/**": true
   },
-  
+  // Your current settings. Don't forget to put comma symbol...
+  // ...at the end of your current settings last object.
+
+  "[handlebars]": {
+    "editor.defaultFormatter": "vscode.html-language-features"
+  },
   // Exclude node_modules from search
   "search.exclude": {
     "**/node_modules": true,
     "**/.next": true,
     "**/out": true
   },
-  
+
   // Hide node_modules from the explorer
   "files.exclude": {
     "**/node_modules": false, // Set to true to completely hide from explorer,
@@ -21,16 +26,16 @@
     "__queuestorage__": true,
     "__tablestorage__": true
   },
-  
+
   // TypeScript: Don't show errors from node_modules
   "typescript.preferences.autoImportFileExcludePatterns": [
     "**/node_modules/**"
   ],
-  
+
   // JavaScript: Validate only what you're working on
   "javascript.validate.enable": true,
   "typescript.validate.enable": true,
-  
+
   // Exclude node_modules from problems view
   "problems.autoReveal": true,
   "jest.rootPath": "src/ALAN.Web"

@@ -23,8 +23,8 @@ RUN dotnet publish "ALAN.ChatApi.csproj" -c Release -o /app/publish /p:UseAppHos
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app
 
-# Install Azure CLI for AzureCliCredential support
-RUN apt-get update && apt-get install -y curl gnupg lsb-release \
+# Install Azure CLI for AzureCliCredential support and procps for healthcheck
+RUN apt-get update && apt-get install -y curl gnupg lsb-release procps \
     && mkdir -p /etc/apt/keyrings \
     && curl -sLS https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg \
     && chmod go+r /etc/apt/keyrings/microsoft.gpg \
@@ -34,9 +34,22 @@ RUN apt-get update && apt-get install -y curl gnupg lsb-release \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser -u 1001 appuser \
+    && chown -R appuser:appuser /app
+
+# Copy application files with correct ownership
+COPY --from=publish --chown=appuser:appuser /app/publish .
+
+# Switch to non-root user
+USER appuser
+
 # Expose HTTP and HTTPS ports
 EXPOSE 5041
 EXPOSE 5042
 
-COPY --from=publish /app/publish .
+# Add healthcheck - check if dotnet process is running
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD pgrep -f "dotnet.*ALAN.ChatApi" > /dev/null || exit 1
+
 ENTRYPOINT ["dotnet", "ALAN.ChatApi.dll"]

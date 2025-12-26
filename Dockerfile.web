@@ -19,13 +19,23 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=5269
 
-# Copy standalone output
-COPY --from=frontend-build /app/.next/standalone ./
-COPY --from=frontend-build /app/.next/static ./.next/static
-COPY --from=frontend-build /app/public ./public
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
+
+# Copy standalone output with correct ownership
+COPY --from=frontend-build --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=frontend-build --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=frontend-build --chown=nextjs:nodejs /app/public ./public
+
+# Switch to non-root user
+USER nextjs
 
 # Expose port
 EXPOSE 5269
+
+# Add healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get({host:'0.0.0.0',port:5269,timeout:5000}, (r) => {process.exit(r.statusCode === 200 ? 0 : 1);}).on('error', () => process.exit(1));"
 
 # Start the Next.js server
 CMD ["node", "server.js"]

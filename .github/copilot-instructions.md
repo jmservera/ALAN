@@ -7,7 +7,6 @@ ALAN (Autonomous Learning Agent Network) is a Semantic Kernel-based autonomous a
 ### Architecture Components
 
 1. **ALAN.Agent** (Main Process)
-
    - Background service running an autonomous agent loop
    - Uses Semantic Kernel with Azure OpenAI for AI capabilities
    - Persists thoughts and actions to Azure Blob Storage (via Azurite locally)
@@ -15,7 +14,6 @@ ALAN (Autonomous Learning Agent Network) is a Semantic Kernel-based autonomous a
    - Core logic in `AutonomousAgent.cs`
 
 2. **ALAN.ChatApi** (Backend API)
-
    - ASP.NET Core web API with REST endpoints
    - Provides all server-side logic for the web interface
    - Background service (`AgentStateService`) polls storage for agent state
@@ -25,7 +23,6 @@ ALAN (Autonomous Learning Agent Network) is a Semantic Kernel-based autonomous a
    - Ports: 5041 (HTTP), 5042 (HTTPS)
 
 3. **ALAN.Web** (Next.js Frontend)
-
    - Next.js 16 application with TypeScript using App Router
    - Built with Next.js for fast development and production builds
    - Real-time polling of agent state from ALAN.ChatApi
@@ -60,23 +57,22 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 **To start debugging:**
 
 1. **Ensure Azurite is running**
-
    - Check if port 10000 is open and active
    - If not working, ask user to start the Azurite extension (not restart VS Code)
    - DO NOT troubleshoot Azurite itself - only verify port 10000 status
 
 2. **Install Next.js frontend dependencies (first time only)**
+
    ```bash
    cd src/ALAN.Web
    npm install
    ```
 
 3. **Set environment variables**
-
    - Copy values from `.env` to your environment
    - Required: `AZURE_OPENAI_ENDPOINT`, managed identity credentials
    - Required: `AZURE_STORAGE_CONNECTION_STRING` for Azure Blob Storage (Azurite locally)
-      - Local storage uses Azurite with the default development storage connection string
+     - Local storage uses Azurite with the default development storage connection string
 
 4. **Launch all services**
    - Use the "Launch Agent + ChatApi + Web" compound launch configuration
@@ -160,6 +156,7 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 ### Memory Context in Agent Loop
 
 The agent maintains continuity across iterations through:
+
 - **Initial Load**: Loads top 20 memories at startup (learnings, successes, reflections, decisions)
 - **Periodic Refresh**: Updates memory context every 10 iterations or hourly
 - **Weighted Selection**: Combines importance (70%) and recency (30%) to prioritize relevant memories
@@ -167,6 +164,7 @@ The agent maintains continuity across iterations through:
 - **Additive Knowledge**: Memories are append-only, never overwritten
 
 Configuration constants in `AutonomousAgent.cs`:
+
 - `MAX_MEMORY_CONTEXT_SIZE = 20` - Max memories included in context
 - `MEMORY_REFRESH_INTERVAL_ITERATIONS = 10` - Iterations between refreshes
 - `MEMORY_REFRESH_INTERVAL_HOURS = 1` - Hours between refreshes
@@ -253,6 +251,7 @@ Configuration constants in `AutonomousAgent.cs`:
 ALAN implements comprehensive resiliency patterns using **Polly v8.5.0** for all Azure service integrations. All external API calls are wrapped with retry policies featuring exponential backoff and jitter.
 
 **Resilience Implementation:**
+
 - **Use ResiliencePolicy helper** - Located in `src/ALAN.Shared/Services/Resilience/ResiliencePolicy.cs`
 - **Storage operations** - 3 retries, 1s initial delay, ~7s max (handles 429, 503, 504, 408)
 - **OpenAI operations** - 5 retries, 2s initial delay, ~62s max (handles 429, 503, 504, 500)
@@ -260,6 +259,7 @@ ALAN implements comprehensive resiliency patterns using **Polly v8.5.0** for all
 - **Proper cancellation** - OperationCanceledException is NOT retried, allows immediate cancellation
 
 **When adding new Azure service calls:**
+
 ```csharp
 // Initialize pipeline in constructor
 private readonly ResiliencePipeline _resiliencePipeline;
@@ -278,6 +278,7 @@ public async Task<Data> GetDataAsync(CancellationToken ct)
 ```
 
 **General Resiliency Principles:**
+
 - **Design for failure** - Assume Azure services may be temporarily unavailable
 - **Implement idempotency** - State changes should be safe to retry
 - **Use appropriate timeouts** - Prevent indefinite waits on external calls
@@ -285,6 +286,7 @@ public async Task<Data> GetDataAsync(CancellationToken ct)
 - **Graceful degradation** - UI should work with SignalR fallback to polling
 
 **Testing Resiliency:**
+
 - Test retry on transient errors (429, 503, 504, 408)
 - Test success after retries
 - Test failure after max retries
@@ -307,6 +309,7 @@ For detailed documentation, see `docs/RESILIENCY.md`.
 #### Modern C# Features (C# 12+)
 
 **Collection Expressions** - Use `[]` syntax for all collection initialization:
+
 ```csharp
 // ✅ Preferred - Modern collection expressions
 string[] vowels = ["a", "e", "i", "o", "u"];
@@ -320,6 +323,7 @@ var numbers = new List<int> { 1, 2, 3, 4, 5 };
 ```
 
 **Spread Operator** - Use `..` to expand collections inline:
+
 ```csharp
 // ✅ Preferred - Spread operator
 int[] row1 = [1, 2, 3];
@@ -335,6 +339,7 @@ var combined = row1.Concat(row2).Append(7).Append(8).ToArray();
 ```
 
 **Primary Constructors** - Use for dependency injection and simple initialization:
+
 ```csharp
 // ✅ Preferred - Primary constructor
 public class ExampleService(ILogger<ExampleService> logger, IConfiguration config)
@@ -347,7 +352,7 @@ public class ExampleService
 {
     private readonly ILogger<ExampleService> _logger;
     private readonly IConfiguration _config;
-    
+
     public ExampleService(ILogger<ExampleService> logger, IConfiguration config)
     {
         _logger = logger;
@@ -357,12 +362,14 @@ public class ExampleService
 ```
 
 **Collection Expressions Best Practices**:
+
 - Use `[]` for empty collections instead of `new List<T>()` or `Array.Empty<T>()`
 - Prefer collection expressions for all collection types (arrays, lists, spans, IEnumerable)
 - Use spread `..` to combine collections efficiently
 - Leverage target-typing - no need to specify type when it's inferred
 
 **When to Use Each Feature**:
+
 - **Collection expressions**: Any time you initialize a collection with values
 - **Spread operator**: Combining multiple collections, conditional element inclusion
 - **Primary constructors**: Dependency injection, immutable data classes, simple initialization
@@ -386,18 +393,21 @@ public class ExampleService
 ### Memory System
 
 **ALWAYS maintain knowledge continuity:**
+
 - Agent must load memories at startup via `LoadRecentMemoriesAsync()`
 - Include memory context in all AI prompts (see `ThinkAndActAsync()`)
 - Refresh memories periodically (current: every 10 iterations or hourly)
 - Never overwrite memories - only append via `StoreMemoryAsync()`
 
 **When modifying the agent loop:**
+
 - Ensure memory loading happens before first iteration
 - Include `BuildMemoryContext()` output in prompts
 - Maintain the importance + recency weighting system
 - Respect the additive-only memory pattern
 
 **When adding new memory types:**
+
 - Update `LoadRecentMemoriesAsync()` to include the new type
 - Adjust weights in `BuildMemoryContext()` grouping logic
 - Consider how the type affects importance calculations
@@ -406,6 +416,7 @@ public class ExampleService
 ### Future Multi-Agent Considerations
 
 The architecture is prepared for multiple specialized agents:
+
 - Interface-based memory services enable shared or isolated stores
 - Memory tagging supports agent-specific filtering
 - MCP integration pattern allows agent-specific tools
@@ -419,16 +430,16 @@ The project uses **xUnit** with **Moq** for testing. All new features and modifi
 
 **Test Projects:**
 
-| Project           | Location                   | Coverage                                                           |
-| ----------------- | -------------------------- | ------------------------------------------------------------------ |
-| ALAN.Agent.Tests  | `tests/ALAN.Agent.Tests/`  | UsageTracker, StateManager, CodeProposalService, AutonomousAgent  |
-| ALAN.Shared.Tests | `tests/ALAN.Shared.Tests/` | AgentState, AgentThought, AgentAction, CodeProposal, Memory models |
-| ALAN.ChatApi.Tests| `tests/ALAN.ChatApi.Tests/`| AgentStateService, Controllers (State, HumanInput, CodeProposal)   |
+| Project            | Location                    | Coverage                                                           |
+| ------------------ | --------------------------- | ------------------------------------------------------------------ |
+| ALAN.Agent.Tests   | `tests/ALAN.Agent.Tests/`   | UsageTracker, StateManager, CodeProposalService, AutonomousAgent   |
+| ALAN.Shared.Tests  | `tests/ALAN.Shared.Tests/`  | AgentState, AgentThought, AgentAction, CodeProposal, Memory models |
+| ALAN.ChatApi.Tests | `tests/ALAN.ChatApi.Tests/` | AgentStateService, Controllers (State, HumanInput, CodeProposal)   |
 
 **Test Files:**
 
 - `tests/ALAN.Agent.Tests/Services/` - Core agent services tests
-- `tests/ALAN.Shared.Tests/Models/` - All shared model tests  
+- `tests/ALAN.Shared.Tests/Models/` - All shared model tests
 - `tests/ALAN.Shared.Tests/Services/` - Shared service tests
 - `tests/ALAN.ChatApi.Tests/Services/` - ChatApi service tests
 - `tests/ALAN.ChatApi.Tests/Controllers/` - API controller tests
@@ -463,7 +474,7 @@ For detailed test documentation, see `TEST_SUITE_SUMMARY.md`.
 ### Dockerfiles
 
 - **Dockerfile.agent** - Builds ALAN.Agent service
-- **Dockerfile.chatapi** - Builds ALAN.ChatApi service  
+- **Dockerfile.chatapi** - Builds ALAN.ChatApi service
 - **Dockerfile.web** - Builds Next.js frontend with standalone output
 
 ### Building Docker Images
@@ -512,6 +523,7 @@ ALAN includes comprehensive Bicep templates for deploying to Azure Container App
 The `infra/` directory contains Infrastructure as Code (IaC) templates following Azure Developer CLI (azd) conventions:
 
 **Core Files:**
+
 - `main.bicep` - Entry point with subscription-level deployment and default parameters
 - `main.parameters.json` - Parameters file supporting environment variables (e.g., `${AZURE_ENV_NAME}`)
 - `resources.bicep` - Main resource deployment orchestrating all Azure resources
@@ -519,6 +531,7 @@ The `infra/` directory contains Infrastructure as Code (IaC) templates following
 - `modules/container-app.bicep` - Reusable Container App module
 
 **Deployed Resources:**
+
 1. **Virtual Network** with three subnets (infrastructure, private endpoints, container apps)
 2. **Azure Storage Account** (private) with blob containers and queues
 3. **Azure OpenAI** (private) with GPT-4o-mini deployment
@@ -532,6 +545,7 @@ The `infra/` directory contains Infrastructure as Code (IaC) templates following
 ### Deployment Options
 
 **Using Azure Developer CLI (azd) - Recommended:**
+
 ```bash
 # Initialize environment
 azd init
@@ -549,6 +563,7 @@ azd deploy
 ```
 
 **Using Azure CLI:**
+
 ```bash
 # Deploy at subscription level
 az deployment sub create \
@@ -569,16 +584,19 @@ az deployment sub create \
 ### Configuration Parameters
 
 **Required:**
+
 - `environmentName` - Environment name (dev, staging, prod)
 - `location` - Azure region (eastus, westus2, etc.)
 
 **Optional Reliability Features:**
+
 - `enableZoneRedundancy` - Enable zone redundancy for production (default: false)
 - `enableAutoScaling` - Enable Container Apps auto-scaling (default: false)
 - `minReplicas` - Minimum replica count (default: 1)
 - `maxReplicas` - Maximum replica count when auto-scaling (default: 10)
 
 **Application Settings:**
+
 - `openAiDeploymentName` - OpenAI deployment name (default: gpt-4o-mini)
 - `openAiModelName` - OpenAI model name (default: gpt-4o-mini)
 - `agentMaxLoopsPerDay` - Maximum agent loops per day (default: 4000)
@@ -600,6 +618,7 @@ az deployment group show \
 ```
 
 **Key Outputs:**
+
 - `AZURE_OPENAI_ENDPOINT` - Set in local `.env`
 - `AZURE_STORAGE_CONNECTION_STRING` - Set in local `.env`
 - `WEB_APP_URL` - Public web application URL
@@ -608,6 +627,7 @@ az deployment group show \
 ### Using Azure Verified Modules (AVM)
 
 The infrastructure uses AVM modules for these resources:
+
 - `br/public:avm/res/managed-identity/user-assigned-identity` - Managed Identity
 - `br/public:avm/res/operational-insights/workspace` - Log Analytics
 - `br/public:avm/res/network/virtual-network` - Virtual Network
@@ -622,6 +642,7 @@ AVM modules follow Microsoft best practices and are maintained by the Azure team
 ### CI/CD Integration
 
 **GitHub Actions:**
+
 - Security scanning workflow at `.github/workflows/security-scan.yml`
 - Automated Checkov security validation on infrastructure changes
 - Configure with azd workflows using `azure.yaml`
@@ -654,6 +675,7 @@ az acr build --registry <registry> --image alan-web:latest -f Dockerfile.web .
 ### Cost Estimation
 
 **Development Environment (~$100-300/month):**
+
 - Container Apps (3 apps, 0.5 vCPU, 1GB each): ~$30-50
 - Storage Account (LRS): ~$5-10
 - Azure OpenAI (gpt-4o-mini, 100K TPM): ~$50-200 (usage-based)
@@ -672,21 +694,27 @@ az acr build --registry <registry> --image alan-web:latest -f Dockerfile.web .
 5. **Review logs** - Use Log Analytics for troubleshooting and monitoring
 6. **Keep images updated** - Regularly rebuild and push container images
 7. **Test in dev first** - Always validate infrastructure changes in development
+8. **Use private endpoints** - Secure access to Azure services
+9. **Follow naming conventions** - Use `abbreviations.json` for resource names
+10. **Use Checkov scans for security** - Integrate into CI/CD pipelines and use it locally with `uv run checkov` or use `LOG_LEVEL=DEBUG uv run checkov` for detailed output.
 
 ### Troubleshooting Infrastructure
 
 **Container App not starting:**
+
 - Check Container Apps logs in Azure Portal
 - Verify managed identity has Storage and OpenAI permissions
 - Ensure container images are pushed to ACR
 - Validate environment variables are set correctly
 
 **Private endpoint issues:**
+
 - Verify private endpoints are in "Approved" state
 - Check Private DNS zones are linked to VNet
 - Ensure Container Apps subnet has correct delegations
 
 **Access denied errors:**
+
 - Verify managed identity role assignments on Storage and OpenAI
 - Check AZURE_CLIENT_ID environment variable is set in Container Apps
 - Ensure network access is allowed from Container Apps subnet

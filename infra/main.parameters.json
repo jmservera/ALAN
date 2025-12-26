@@ -63,7 +63,7 @@
       "value": "${GITHUB_MCP_PAT}"
     },
     "github_project_url": {
-      "value": "${GITHUB_PROJECT_URL=jmservera/ALAN}"
+      "value": "${GITHUB_PROJECT_URL=jmserverorg/ALAN_WORK}"
     }
   }
 }

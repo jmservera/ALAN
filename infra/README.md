@@ -24,23 +24,29 @@ The infrastructure deploys a complete Azure environment with the following compo
    - Private endpoint for secure access
    - Managed identity authentication
 
-4. **Container Registry** (Private)
+4. **Azure AI Search** (Private)
+   - Vector search for semantic memory retrieval
+   - Basic SKU (configurable to Standard/Premium)
+   - Private endpoint for secure access
+   - Managed identity authentication
+
+5. **Container Registry** (Private)
    - Stores container images for agent, chatapi, and web
    - Managed identity for pull access
 
-5. **Container Apps Environment**
+6. **Container Apps Environment**
    - Integrated with VNet for security
    - Connected to Log Analytics for monitoring
    - Optional zone redundancy for production
 
-6. **Container Apps** (3 applications)
+7. **Container Apps** (3 applications)
    - **alan-agent**: Background agent service (internal only)
    - **alan-chatapi**: API service (internal only)
    - **alan-web**: Web UI (public ingress)
 
 7. **Managed Identity**
    - User-assigned identity for all applications
-   - Permissions for Storage, OpenAI, and Container Registry
+   - Permissions for Storage, OpenAI, AI Search, and Container Registry
 
 8. **Log Analytics Workspace**
    - Centralized logging and monitoring
@@ -48,7 +54,7 @@ The infrastructure deploys a complete Azure environment with the following compo
 
 ### Security Features
 
-- **Private Endpoints**: All Azure services (Storage, OpenAI, Container Registry) are accessible only through private endpoints
+- **Private Endpoints**: All Azure services (Storage, OpenAI, AI Search, Container Registry) are accessible only through private endpoints
 - **Network Isolation**: Resources deployed in VNet with controlled access
 - **Managed Identity**: No connection strings or keys stored in configuration
 - **Public Access**: Only the web application has a public endpoint
@@ -181,6 +187,9 @@ The `azd` deployment automatically retrieves your user identity and public IP ad
 | `openAiModelName`      | `gpt-4o-mini`   | OpenAI model to deploy                                       |
 | `openAiModelVersion`   | `2024-07-18`    | Model version                                                |
 | `openAiModelCapacity`  | `100`           | Capacity in thousands of tokens per minute                   |
+| `searchServiceSku`     | `basic`         | AI Search SKU: `basic`, `standard`, `standard2`, `standard3` |
+| `searchServiceReplicaCount` | `1`        | Number of replicas for AI Search (1-12)                      |
+| `searchServicePartitionCount` | `1`      | Number of partitions for AI Search (1, 2, 3, 4, 6, or 12)   |
 | `agentMaxLoopsPerDay`  | `4000`          | Maximum agent loops per day                                  |
 | `agentMaxTokensPerDay` | `8000000`       | Maximum tokens per day                                       |
 | `agentThinkInterval`   | `5`             | Seconds between agent thoughts                               |
@@ -197,6 +206,8 @@ After deployment, the following outputs are available for local development:
 | ---------------------------------- | -------------------------- | --------------------- |
 | `AZURE_OPENAI_ENDPOINT`            | OpenAI endpoint URL        | Set in `.env`         |
 | `AZURE_OPENAI_DEPLOYMENT`          | Deployment name            | Set in `.env`         |
+| `AZURE_AI_SEARCH_ENDPOINT`         | AI Search endpoint URL     | Set in `.env`         |
+| `AZURE_AI_SEARCH_NAME`             | AI Search service name     | For management        |
 | `AZURE_STORAGE_ACCOUNT_NAME`       | Storage account name       | For connection string |
 | `AZURE_STORAGE_CONNECTION_STRING`  | Full connection string     | Set in `.env`         |
 | `WEB_APP_URL`                      | Public web application URL | Access the UI         |

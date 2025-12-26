@@ -94,9 +94,8 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
           // Support both ACR images and external images (e.g., mcr.microsoft.com for placeholders)
           // If containerImage starts with a registry domain, use it as-is
           // Otherwise, prefix with the ACR name
-          image: contains(containerImage, '/') && !startsWith(containerImage, '${containerRegistryName}.azurecr.io')
-            ? containerImage
-            : '${containerRegistryName}.azurecr.io/${containerImage}'
+          // USE LONG FORMATTING to avoid Bicep parsing issues in Checkov
+          image: contains(containerImage, '/') && !startsWith(containerImage, '${containerRegistryName}.azurecr.io') ? containerImage : '${containerRegistryName}.azurecr.io/${containerImage}'
           env: environmentVariables
           resources: {
             cpu: json(cpu)

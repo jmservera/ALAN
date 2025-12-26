@@ -223,6 +223,8 @@ Configuration constants in `AutonomousAgent.cs`:
 → Review logs for "Restored previous state" or rejection reasons
 → Check short-term memory TTL (1 hour for state) hasn't expired
 
+**SignalR connection failed:**
+→ Falls back to polling mode automatically (see `Index.cshtml`)
 **React app connection errors:**
 → Verify ALAN.ChatApi is running on port 5001
 → Check `VITE_API_URL` in `.env` file

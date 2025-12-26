@@ -1,17 +1,18 @@
 using System.ComponentModel;
+using Microsoft.Extensions.AI;
 
 namespace ALAN.Agent.Plugins;
 
 /// <summary>
 /// Plugin providing utility functions for the agent.
 /// </summary>
-public class UtilityPlugin
+public static class UtilityPlugin
 {
     /// <summary>
     /// Gets the current date and time in UTC.
     /// </summary>
     [Description("Gets the current date and time in UTC format")]
-    public string GetCurrentDateTime()
+    public static string GetCurrentDateTime()
     {
         return DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss UTC");
     }
@@ -20,7 +21,7 @@ public class UtilityPlugin
     /// Gets the current date and time in a specific format.
     /// </summary>
     [Description("Gets the current date and time in a specified format")]
-    public string GetFormattedDateTime(
+    public static string GetFormattedDateTime(
         [Description("The format string (e.g., 'yyyy-MM-dd', 'HH:mm:ss')")] string format)
     {
         try
@@ -37,7 +38,7 @@ public class UtilityPlugin
     /// Gets the current Unix timestamp.
     /// </summary>
     [Description("Gets the current Unix timestamp (seconds since epoch)")]
-    public long GetUnixTimestamp()
+    public static long GetUnixTimestamp()
     {
         return DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     }
@@ -46,7 +47,7 @@ public class UtilityPlugin
     /// Calculates time elapsed since a given timestamp.
     /// </summary>
     [Description("Calculates time elapsed since a given ISO 8601 timestamp")]
-    public string GetTimeSince(
+    public static string GetTimeSince(
         [Description("The starting timestamp in ISO 8601 format")] string timestamp)
     {
         try
@@ -72,7 +73,7 @@ public class UtilityPlugin
     /// Generates a new GUID.
     /// </summary>
     [Description("Generates a new globally unique identifier (GUID)")]
-    public string GenerateGuid()
+    public static string GenerateGuid()
     {
         return Guid.NewGuid().ToString();
     }
@@ -81,7 +82,7 @@ public class UtilityPlugin
     /// Formats a time duration.
     /// </summary>
     [Description("Formats a duration in seconds into a human-readable string")]
-    public string FormatDuration(
+    public static string FormatDuration(
         [Description("Duration in seconds")] double seconds)
     {
         var timeSpan = TimeSpan.FromSeconds(seconds);
@@ -93,5 +94,19 @@ public class UtilityPlugin
         if (timeSpan.TotalMinutes >= 1)
             return $"{timeSpan.TotalMinutes:F1} minutes";
         return $"{timeSpan.TotalSeconds:F1} seconds";
+    }
+
+    public static IEnumerable<AITool> AsTools()
+    {
+        return
+        [
+            AIFunctionFactory.Create(GetCurrentDateTime),
+            AIFunctionFactory.Create(GetFormattedDateTime),
+            AIFunctionFactory.Create(GetUnixTimestamp),
+            AIFunctionFactory.Create(GetTimeSince),
+            AIFunctionFactory.Create(GenerateGuid),
+            AIFunctionFactory.Create(FormatDuration)
+        ];
+
     }
 }

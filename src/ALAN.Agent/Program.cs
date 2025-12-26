@@ -13,6 +13,7 @@ using Azure.AI.OpenAI;
 using Azure;
 using OpenAI;
 using Azure.Identity;
+using ALAN.Agent.Plugins;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -147,8 +148,12 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     //                 // Load and configure MCP servers from YAML
     var mcpConfigPath = Path.Combine(AppContext.BaseDirectory, "mcp-config.yaml");
     var mcpService = sp.GetRequiredService<McpConfigurationService>();
+
     var tools = mcpService.ConfigureMcpTools(mcpConfigPath).GetAwaiter().GetResult();
 
+    var utilityTools = UtilityPlugin.AsTools();
+    tools ??= [];
+    tools.AddRange(utilityTools);
 
     AzureOpenAIClient azureClient;
     AzureOpenAIClientOptions azureOptions = new AzureOpenAIClientOptions(
@@ -162,7 +167,6 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     {
         azureClient = new AzureOpenAIClient(new Uri(endpoint), new DefaultAzureCredential(), azureOptions);
     }
-
 
     var logger = sp.GetRequiredService<ILogger<Program>>();
     logger.LogInformation("Creating AI agent with {ToolCount} tools", tools?.Count ?? 0);
@@ -192,6 +196,7 @@ builder.Services.AddSingleton<AIAgent>(sp =>
                                 instructions: instructions,
                                 tools: tools,
                                 name: "ALAN-Agent");
+
     return agent;
 
 

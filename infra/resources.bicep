@@ -32,6 +32,14 @@ param openAiModelVersion string
 @description('Planned capacity or throughput setting for the Azure OpenAI deployment')
 param openAiModelCapacity int
 
+// Azure AI Search Parameters
+@description('SKU for Azure AI Search service')
+param searchServiceSku string
+@description('Number of replicas for Azure AI Search')
+param searchServiceReplicaCount int
+@description('Number of partitions for Azure AI Search')
+param searchServicePartitionCount int
+
 // Application Parameters
 @description('Maximum number of agent loop iterations allowed per day')
 param agentMaxLoopsPerDay int
@@ -81,6 +89,7 @@ var containerAppsEnvName = '${abbrs.appManagedEnvironments}${environmentName}-${
 var vnetName = '${abbrs.networkVirtualNetworks}${environmentName}-${resourceToken}'
 var storageAccountName = '${abbrs.storageStorageAccounts}${resourceToken}'
 var openAiAccountName = '${abbrs.cognitiveServicesAccounts}${environmentName}-${resourceToken}'
+var searchServiceName = '${abbrs.searchSearchServices}${environmentName}-${resourceToken}'
 
 // Network configuration
 var vnetAddressPrefix = '10.0.0.0/16'
@@ -346,6 +355,21 @@ module privateDnsZoneAcr 'br/public:avm/res/network/private-dns-zone:0.6.0' = {
   }
 }
 
+// Private DNS Zone for Azure AI Search
+module privateDnsZoneSearch 'br/public:avm/res/network/private-dns-zone:0.6.0' = {
+  name: 'privateDnsZone-search-${environmentName}'
+  params: {
+    name: 'privatelink.search.windows.net'
+    tags: tags
+    virtualNetworkLinks: [
+      {
+        virtualNetworkResourceId: vnet.outputs.resourceId
+        registrationEnabled: false
+      }
+    ]
+  }
+}
+
 // Azure OpenAI with private endpoint
 module openai 'br/public:avm/res/cognitive-services/account:0.9.1' = {
   name: 'openai-${environmentName}'
@@ -405,6 +429,71 @@ module openai 'br/public:avm/res/cognitive-services/account:0.9.1' = {
       {
         principalId: managedIdentity.outputs.principalId
         roleDefinitionIdOrName: 'Cognitive Services OpenAI User'
+        principalType: 'ServicePrincipal'
+      }
+    ]
+  }
+}
+
+// Azure AI Search with private endpoint
+module searchService 'br/public:avm/res/search/search-service:0.9.0' = {
+  name: 'search-${environmentName}'
+  params: {
+    name: searchServiceName
+    location: location
+    tags: tags
+    sku: searchServiceSku
+    replicaCount: searchServiceReplicaCount
+    partitionCount: searchServicePartitionCount
+    publicNetworkAccess: 'Disabled'
+    networkRuleSet: {
+      ipRules: []
+      bypass: 'AzureServices'
+    }
+    privateEndpoints: [
+      {
+        name: 'pe-${searchServiceName}'
+        subnetResourceId: vnet.outputs.subnetResourceIds[1] // private-endpoint-subnet
+        service: 'searchService'
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            {
+              privateDnsZoneResourceId: privateDnsZoneSearch.outputs.resourceId
+            }
+          ]
+        }
+      }
+    ]
+    roleAssignments: !empty(principalId) ? [
+      {
+        principalId: managedIdentity.outputs.principalId
+        roleDefinitionIdOrName: 'Search Index Data Contributor'
+        principalType: 'ServicePrincipal'
+      }
+      {
+        principalId: managedIdentity.outputs.principalId
+        roleDefinitionIdOrName: 'Search Service Contributor'
+        principalType: 'ServicePrincipal'
+      }
+      {
+        principalId: principalId
+        roleDefinitionIdOrName: 'Search Index Data Contributor'
+        principalType: principalType
+      }
+      {
+        principalId: principalId
+        roleDefinitionIdOrName: 'Search Service Contributor'
+        principalType: principalType
+      }
+    ] : [
+      {
+        principalId: managedIdentity.outputs.principalId
+        roleDefinitionIdOrName: 'Search Index Data Contributor'
+        principalType: 'ServicePrincipal'
+      }
+      {
+        principalId: managedIdentity.outputs.principalId
+        roleDefinitionIdOrName: 'Search Service Contributor'
         principalType: 'ServicePrincipal'
       }
     ]
@@ -501,6 +590,10 @@ module agentApp './modules/container-app.bicep' = {
         value: openAiDeploymentName
       }
       {
+        name: 'AZURE_AI_SEARCH_ENDPOINT'
+        value: searchService.outputs.endpoint
+      }
+      {
         name: 'AGENT_MAX_LOOPS_PER_DAY'
         value: string(agentMaxLoopsPerDay)
       }
@@ -563,6 +656,10 @@ module chatApiApp './modules/container-app.bicep' = {
       {
         name: 'AZURE_OPENAI_DEPLOYMENT'
         value: openAiDeploymentName
+      }
+      {
+        name: 'AZURE_AI_SEARCH_ENDPOINT'
+        value: searchService.outputs.endpoint
       }
       {
         name: 'AZURE_STORAGE_ACCOUNT_NAME'
@@ -649,6 +746,10 @@ output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountN
 // OpenAI outputs
 output openAiEndpoint string = openai.outputs.endpoint
 output openAiName string = openai.outputs.name
+
+// AI Search outputs
+output searchServiceEndpoint string = searchService.outputs.endpoint
+output searchServiceName string = searchService.outputs.name
 
 // Container Apps outputs
 output webAppUrl string = 'https://${webApp.outputs.fqdn}'

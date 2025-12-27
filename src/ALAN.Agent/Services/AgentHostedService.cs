@@ -21,6 +21,7 @@ public class AgentHostedService : BackgroundService
     private readonly HumanInputHandler _humanInputHandler;
     private readonly IMemoryConsolidationService _memoryConsolidation;
     private readonly IPromptService _promptService;
+    private readonly MemoryAgent? _memoryAgent; // Optional: only available when vector memory is configured
     private AutonomousAgent? _agent;
 
     public AgentHostedService(
@@ -34,7 +35,8 @@ public class AgentHostedService : BackgroundService
         BatchLearningService batchLearningService,
         HumanInputHandler humanInputHandler,
         IMemoryConsolidationService memoryConsolidation,
-        IPromptService promptService)
+        IPromptService promptService,
+        MemoryAgent? memoryAgent = null) // Optional: only available when vector memory is configured
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -47,6 +49,7 @@ public class AgentHostedService : BackgroundService
         _humanInputHandler = humanInputHandler;
         _memoryConsolidation = memoryConsolidation;
         _promptService = promptService;
+        _memoryAgent = memoryAgent;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -62,7 +65,8 @@ public class AgentHostedService : BackgroundService
             _shortTermMemory,
             _batchLearningService,
             _humanInputHandler,
-            _promptService);
+            _promptService,
+            _memoryAgent); // Pass MemoryAgent for vector search capabilities
 
         // Start memory consolidation background task
         var consolidationTask = RunMemoryConsolidationAsync(stoppingToken);

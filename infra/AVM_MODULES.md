@@ -14,10 +14,11 @@ All modules are referenced from the public Bicep registry: `br/public:avm/res/`
 | `operational-insights/workspace` | 0.9.1 | Log Analytics workspace for monitoring | `infra/resources.bicep:79` |
 | `network/virtual-network` | 0.5.2 | Virtual Network with subnets | `infra/resources.bicep:91` |
 | `storage/storage-account` | 0.14.3 | Storage Account with private endpoints | `infra/resources.bicep:135` |
-| `network/private-dns-zone` | 0.6.0 | Private DNS zones for internal resolution | `infra/resources.bicep:235,250,265` |
-| `cognitive-services/account` | 0.9.1 | Azure OpenAI service | `infra/resources.bicep:280` |
-| `container-registry/registry` | 0.7.1 | Azure Container Registry | `infra/resources.bicep:344` |
-| `app/managed-environment` | 0.8.2 | Container Apps Environment | `infra/resources.bicep:364` |
+| `network/private-dns-zone` | 0.6.0 | Private DNS zones for internal resolution | `infra/resources.bicep:235,250,265,280` |
+| `cognitive-services/account` | 0.9.1 | Azure OpenAI service | `infra/resources.bicep:295` |
+| `search/search-service` | 0.9.0 | Azure AI Search for vector memory | `infra/resources.bicep:439` |
+| `container-registry/registry` | 0.7.1 | Azure Container Registry | `infra/resources.bicep:506` |
+| `app/managed-environment` | 0.8.2 | Container Apps Environment | `infra/resources.bicep:526` |
 
 ## Version Selection Criteria
 
@@ -48,6 +49,7 @@ Each module has comprehensive documentation available:
 - **Storage Account**: https://github.com/Azure/bicep-registry-modules/tree/main/avm/res/storage/storage-account
 - **Private DNS Zone**: https://github.com/Azure/bicep-registry-modules/tree/main/avm/res/network/private-dns-zone
 - **Cognitive Services**: https://github.com/Azure/bicep-registry-modules/tree/main/avm/res/cognitive-services/account
+- **AI Search**: https://github.com/Azure/bicep-registry-modules/tree/main/avm/res/search/search-service
 - **Container Registry**: https://github.com/Azure/bicep-registry-modules/tree/main/avm/res/container-registry/registry
 - **Container Apps Environment**: https://github.com/Azure/bicep-registry-modules/tree/main/avm/res/app/managed-environment
 

@@ -33,6 +33,7 @@ public class AutonomousAgent
     private readonly HumanInputHandler _humanInputHandler;
     private readonly IPromptService _promptService;
     private readonly ResiliencePipeline _resiliencePipeline;
+    private readonly MemoryAgent? _memoryAgent; // Optional: only available when Azure AI Search is configured
     private bool _isRunning;
     private bool _isPaused;
     private string _receivedDirective = "Think about how to improve yourself.";
@@ -52,7 +53,8 @@ public class AutonomousAgent
         IShortTermMemoryService shortTermMemory,
         BatchLearningService batchLearningService,
         HumanInputHandler humanInputHandler,
-        IPromptService promptService)
+        IPromptService promptService,
+        MemoryAgent? memoryAgent = null) // Optional: only available when Azure AI Search is configured
     {
         _agent = agent;
         _thread = agent.GetNewThread();
@@ -64,8 +66,18 @@ public class AutonomousAgent
         _batchLearningService = batchLearningService;
         _humanInputHandler = humanInputHandler;
         _promptService = promptService;
+        _memoryAgent = memoryAgent;
         _resiliencePipeline = ResiliencePolicy.CreateOpenAIRetryPipeline(logger);
         _humanInputHandler.SetAgent(this);
+        
+        if (_memoryAgent != null)
+        {
+            _logger.LogInformation("MemoryAgent is available - vector search enabled");
+        }
+        else
+        {
+            _logger.LogInformation("MemoryAgent not available - using traditional memory retrieval");
+        }
     }
 
     public void UpdatePrompt(string prompt)
@@ -187,6 +199,7 @@ public class AutonomousAgent
     /// <summary>
     /// Loads recent memories and learnings from long-term storage to provide context for decision-making.
     /// This ensures the agent builds on previous knowledge rather than starting from scratch each iteration.
+    /// Uses vector search when available for more relevant memory retrieval.
     /// </summary>
     internal async Task LoadRecentMemoriesAsync(CancellationToken cancellationToken)
     {
@@ -194,6 +207,86 @@ public class AutonomousAgent
         {
             _logger.LogInformation("Loading recent memories from long-term storage...");
 
+            // Use vector search if available and we have a current directive
+            if (_memoryAgent != null && !string.IsNullOrEmpty(_currentDirective))
+            {
+                await LoadMemoriesWithVectorSearchAsync(cancellationToken);
+            }
+            else
+            {
+                await LoadMemoriesTraditionalAsync(cancellationToken);
+            }
+
+            _lastMemoryLoad = DateTime.UtcNow;
+
+            // Log actual counts from the final _recentMemories list
+            var learningsInContext = _recentMemories.Count(m => m.Type == MemoryType.Learning);
+            var successesInContext = _recentMemories.Count(m => m.Type == MemoryType.Success);
+            var reflectionsInContext = _recentMemories.Count(m => m.Type == MemoryType.Reflection);
+            var decisionsInContext = _recentMemories.Count(m => m.Type == MemoryType.Decision);
+            _logger.LogInformation("Loaded {Count} memories: {Learnings} learnings, {Successes} successes, {Reflections} reflections, {Decisions} decisions",
+                _recentMemories.Count, learningsInContext, successesInContext, reflectionsInContext, decisionsInContext);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load recent memories, continuing with empty context");
+            _recentMemories = [];
+        }
+    }
+
+    /// <summary>
+    /// Loads memories using vector search for semantic relevance to current directive.
+    /// </summary>
+    private async Task LoadMemoriesWithVectorSearchAsync(CancellationToken cancellationToken)
+    {
+        if (_memoryAgent == null) return;
+
+        _logger.LogInformation("Using vector search to find relevant memories for directive: {Directive}", _currentDirective);
+
+        // Search for memories relevant to the current directive
+        var vectorResults = await _memoryAgent.SearchRelevantMemoriesAsync(
+            _currentDirective,
+            maxResults: MAX_MEMORY_CONTEXT_SIZE,
+            cancellationToken: cancellationToken);
+
+        // Check for similar completed tasks to avoid duplication
+        var similarTask = await _memoryAgent.FindSimilarCompletedTaskAsync(
+            _currentDirective,
+            cancellationToken: cancellationToken);
+
+        if (similarTask != null)
+        {
+            _logger.LogInformation("Found similar completed task (score: {Score}): {Summary}",
+                similarTask.Score, similarTask.Memory.Summary);
+            
+            // Add the similar task at the top of the context
+            _recentMemories = [similarTask.Memory];
+            _recentMemories.AddRange(vectorResults
+                .Where(r => r.Memory.Id != similarTask.Memory.Id)
+                .Select(r => r.Memory)
+                .Take(MAX_MEMORY_CONTEXT_SIZE - 1));
+        }
+        else
+        {
+            _recentMemories = vectorResults.Select(r => r.Memory).ToList();
+        }
+
+        // Evaluate and log search quality
+        var evaluation = await _memoryAgent.EvaluateSearchQualityAsync(
+            _currentDirective,
+            vectorResults,
+            cancellationToken: cancellationToken);
+
+        _logger.LogInformation("Vector search quality: {Precision:P2} precision, avg score {AvgScore:F3}",
+            evaluation.Precision, evaluation.AverageScore);
+    }
+
+    /// <summary>
+    /// Traditional memory loading using type-based queries and importance/recency scoring.
+    /// Used as fallback when vector search is not available.
+    /// </summary>
+    private async Task LoadMemoriesTraditionalAsync(CancellationToken cancellationToken)
+    {
             // Optimize memory loading by fetching in parallel and limiting results
             var learningsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Learning, maxResults: 10, cancellationToken);
             var successesTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Success, maxResults: 10, cancellationToken);
@@ -259,22 +352,6 @@ public class AutonomousAgent
                         .Take(MAX_MEMORY_CONTEXT_SIZE)];
                 }
             }
-
-            _lastMemoryLoad = DateTime.UtcNow;
-
-            // Log actual counts from the final _recentMemories list
-            var learningsInContext = _recentMemories.Count(m => m.Type == MemoryType.Learning);
-            var successesInContext = _recentMemories.Count(m => m.Type == MemoryType.Success);
-            var reflectionsInContext = _recentMemories.Count(m => m.Type == MemoryType.Reflection);
-            var decisionsInContext = _recentMemories.Count(m => m.Type == MemoryType.Decision);
-            _logger.LogInformation("Loaded {Count} memories: {Learnings} learnings, {Successes} successes, {Reflections} reflections, {Decisions} decisions",
-                _recentMemories.Count, learningsInContext, successesInContext, reflectionsInContext, decisionsInContext);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to load recent memories, continuing with empty context");
-            _recentMemories = [];
-        }
     }
 
     private async Task ThinkAndActAsync(CancellationToken cancellationToken)

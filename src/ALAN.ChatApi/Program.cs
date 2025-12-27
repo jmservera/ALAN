@@ -119,8 +119,7 @@ var searchEndpoint = builder.Configuration["AzureAISearch:Endpoint"]
 // else 
 if (!string.IsNullOrEmpty(searchEndpoint))
 {
-    var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
-    logger.LogInformation("Azure AI Search configured, enabling vector memory in ChatAPI");
+    Console.WriteLine("Azure AI Search configured, enabling vector memory in ChatAPI");
     
     // We'll register the actual service after we have the OpenAI endpoint
     builder.Services.AddSingleton<IVectorMemoryService>(sp =>
@@ -147,8 +146,7 @@ if (!string.IsNullOrEmpty(searchEndpoint))
 }
 else
 {
-    var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
-    logger.LogWarning("No vector memory configured in ChatAPI. Memory search features will be limited.");
+    Console.WriteLine("No vector memory configured in ChatAPI. Memory search features will be limited.");
 }
 
 // Register queue service for steering commands (human inputs)

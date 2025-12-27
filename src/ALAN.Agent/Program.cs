@@ -78,7 +78,12 @@ if (string.IsNullOrEmpty(endpoint))
     throw new InvalidOperationException("Azure OpenAI endpoint is required. Set AZURE_OPENAI_ENDPOINT environment variable or AzureOpenAI:Endpoint in appsettings.json");
 }
 
-// Register vector memory service if Azure AI Search is configured
+// Register vector memory service if configured
+// Priority: Qdrant (local dev) > Azure AI Search (production)
+var qdrantEndpoint = builder.Configuration["Qdrant:Endpoint"]
+    ?? builder.Configuration["QDRANT_ENDPOINT"]
+    ?? Environment.GetEnvironmentVariable("QDRANT_ENDPOINT");
+
 var searchEndpoint = builder.Configuration["AzureAISearch:Endpoint"]
     ?? Environment.GetEnvironmentVariable("AZURE_AI_SEARCH_ENDPOINT");
 
@@ -86,7 +91,25 @@ var embeddingDeployment = builder.Configuration["AzureOpenAI:EmbeddingDeployment
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
     ?? "text-embedding-ada-002";
 
-if (!string.IsNullOrEmpty(searchEndpoint))
+if (!string.IsNullOrEmpty(qdrantEndpoint))
+{
+    var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Qdrant configured at {Endpoint}, enabling local vector memory", qdrantEndpoint);
+    
+    builder.Services.AddSingleton<IVectorMemoryService>(sp =>
+    {
+        return new QdrantMemoryService(
+            qdrantEndpoint,
+            endpoint,
+            embeddingDeployment,
+            sp.GetRequiredService<ILogger<QdrantMemoryService>>(),
+            apiKey);
+    });
+    
+    // Register MemoryAgent (depends on AIAgent being registered later)
+    builder.Services.AddSingleton<MemoryAgent>();
+}
+else if (!string.IsNullOrEmpty(searchEndpoint))
 {
     var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
     logger.LogInformation("Azure AI Search configured, enabling vector memory");
@@ -106,8 +129,9 @@ if (!string.IsNullOrEmpty(searchEndpoint))
 else
 {
     var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
-    logger.LogWarning("Azure AI Search not configured. Vector memory features will not be available.");
-    logger.LogInformation("To enable vector memory, set AZURE_AI_SEARCH_ENDPOINT environment variable.");
+    logger.LogWarning("No vector memory configured. To enable:");
+    logger.LogInformation("  - Local dev: Set QDRANT_ENDPOINT=http://localhost:6333");
+    logger.LogInformation("  - Production: Set AZURE_AI_SEARCH_ENDPOINT");
 }
 
 // Register consolidation service (requires AIAgent, so it's registered after)

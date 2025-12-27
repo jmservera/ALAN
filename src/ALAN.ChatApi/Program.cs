@@ -73,12 +73,49 @@ builder.Services.AddSingleton<IShortTermMemoryService>(sp =>
         storageConnectionString,
         sp.GetRequiredService<ILogger<AzureBlobShortTermMemoryService>>()));
 
-// Register vector memory service if Azure AI Search is configured
+// Register vector memory service if configured
+// Priority: Qdrant (local dev) > Azure AI Search (production)
+var qdrantEndpoint = builder.Configuration["Qdrant:Endpoint"]
+    ?? builder.Configuration["QDRANT_ENDPOINT"]
+    ?? Environment.GetEnvironmentVariable("QDRANT_ENDPOINT");
+
 var searchEndpoint = builder.Configuration["AzureAISearch:Endpoint"]
     ?? builder.Configuration["AZURE_AI_SEARCH_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("AZURE_AI_SEARCH_ENDPOINT");
 
-if (!string.IsNullOrEmpty(searchEndpoint))
+if (!string.IsNullOrEmpty(qdrantEndpoint))
+{
+    var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Qdrant configured at {Endpoint}, enabling local vector memory", qdrantEndpoint);
+    
+    builder.Services.AddSingleton<IVectorMemoryService>(sp =>
+    {
+        var openAIEndpoint = builder.Configuration["AzureOpenAI:Endpoint"]
+            ?? builder.Configuration["AZURE_OPENAI_ENDPOINT"]
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+        
+        var embeddingDeployment = builder.Configuration["AzureOpenAI:EmbeddingDeployment"]
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+            ?? "text-embedding-ada-002";
+        
+        var apiKey = builder.Configuration["AzureOpenAI:ApiKey"]
+            ?? builder.Configuration["AZURE_OPENAI_API_KEY"]
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+        
+        if (string.IsNullOrEmpty(openAIEndpoint))
+        {
+            throw new InvalidOperationException("Azure OpenAI endpoint is required for vector memory");
+        }
+        
+        return new QdrantMemoryService(
+            qdrantEndpoint,
+            openAIEndpoint,
+            embeddingDeployment,
+            sp.GetRequiredService<ILogger<QdrantMemoryService>>(),
+            apiKey);
+    });
+}
+else if (!string.IsNullOrEmpty(searchEndpoint))
 {
     var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
     logger.LogInformation("Azure AI Search configured, enabling vector memory in ChatAPI");
@@ -109,7 +146,7 @@ if (!string.IsNullOrEmpty(searchEndpoint))
 else
 {
     var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
-    logger.LogWarning("Azure AI Search not configured in ChatAPI. Vector memory features will not be available.");
+    logger.LogWarning("No vector memory configured in ChatAPI. Memory search features will be limited.");
 }
 
 // Register queue service for steering commands (human inputs)

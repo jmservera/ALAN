@@ -46,6 +46,16 @@ param openAiModelVersion string = '2024-07-18'
 @description('Azure OpenAI model capacity (in thousands of tokens per minute)')
 param openAiModelCapacity int = 100
 
+// Azure OpenAI Embedding Parameters
+@description('Azure OpenAI embedding deployment name')
+param openAiEmbeddingDeploymentName string = 'text-embedding-3-small'
+
+@description('Azure OpenAI embedding model name')
+param openAiEmbeddingModelName string = 'text-embedding-3-small'
+
+@description('Azure OpenAI embedding model version')
+param openAiEmbeddingModelVersion string = '1'
+
 // Azure AI Search Parameters
 @description('Azure AI Search SKU (basic, standard, standard2, standard3, storage_optimized_l1, storage_optimized_l2)')
 @allowed([
@@ -146,6 +156,9 @@ module resources './resources.bicep' = {
     openAiModelName: openAiModelName
     openAiModelVersion: openAiModelVersion
     openAiModelCapacity: openAiModelCapacity
+    openAiEmbeddingDeploymentName: openAiEmbeddingDeploymentName
+    openAiEmbeddingModelName: openAiEmbeddingModelName
+    openAiEmbeddingModelVersion: openAiEmbeddingModelVersion
     searchServiceSku: searchServiceSku
     searchServiceReplicaCount: searchServiceReplicaCount
     searchServicePartitionCount: searchServicePartitionCount
@@ -178,6 +191,7 @@ output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
 output AZURE_OPENAI_ENDPOINT string = resources.outputs.openAiEndpoint
 output AZURE_OPENAI_NAME string = resources.outputs.openAiName
 output AZURE_OPENAI_DEPLOYMENT string = openAiDeploymentName
+output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAiEmbeddingDeploymentName
 
 // Storage outputs for local development
 output AZURE_STORAGE_ACCOUNT_NAME string = resources.outputs.storageAccountName

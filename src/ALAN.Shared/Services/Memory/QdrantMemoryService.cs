@@ -36,8 +36,32 @@ public class QdrantMemoryService : IVectorMemoryService
         _embeddingDeployment = embeddingDeployment;
         _resiliencePipeline = ResiliencePolicy.CreateOpenAIRetryPipeline(logger);
 
-        // Initialize Qdrant client
-        _qdrantClient = new QdrantClient(qdrantEndpoint);
+        if (string.IsNullOrEmpty(qdrantEndpoint))
+        {
+            throw new ArgumentNullException(nameof(qdrantEndpoint), "Qdrant endpoint is required");
+        }
+        if (string.IsNullOrEmpty(openAIEndpoint))
+        {
+            throw new ArgumentNullException(nameof(openAIEndpoint), "Azure OpenAI endpoint is required");
+        }
+        if (string.IsNullOrEmpty(embeddingDeployment))
+        {
+            throw new ArgumentNullException(nameof(embeddingDeployment), "Embedding deployment is required");
+        }
+
+        // Initialize Qdrant client - parse URL to get host, port, and scheme
+        if (!qdrantEndpoint.StartsWith("http://") && !qdrantEndpoint.StartsWith("https://"))
+        {
+            qdrantEndpoint = $"http://{qdrantEndpoint}";
+        }
+
+        var uri = new Uri(qdrantEndpoint);
+        var host = uri.Host;
+        var port = uri.Port;
+        var https = uri.Scheme == "https";
+
+        _qdrantClient = new QdrantClient(host, port, https, apiKey: null);
+        _logger.LogInformation("Qdrant client initialized: {Host}:{Port} (HTTPS: {Https})", host, port, https);
 
         // Initialize OpenAI client for embeddings
         if (!string.IsNullOrEmpty(apiKey))
@@ -74,7 +98,7 @@ public class QdrantMemoryService : IVectorMemoryService
                 },
                 cancellationToken: cancellationToken);
 
-            _logger.LogInformation("Created Qdrant collection '{Collection}' with vector size {Size}", 
+            _logger.LogInformation("Created Qdrant collection '{Collection}' with vector size {Size}",
                 CollectionName, VectorSize);
         }
         catch (Exception ex)
@@ -163,7 +187,7 @@ public class QdrantMemoryService : IVectorMemoryService
                 })
                 .ToList();
 
-            _logger.LogInformation("Found {Count} memories for query (min score: {MinScore})", 
+            _logger.LogInformation("Found {Count} memories for query (min score: {MinScore})",
                 results.Count, minScore);
 
             return results;
@@ -301,7 +325,7 @@ public class QdrantMemoryService : IVectorMemoryService
             Tags = JsonSerializer.Deserialize<List<string>>(payload["tags"].StringValue) ?? new List<string>(),
             AccessCount = (int)payload["accessCount"].IntegerValue,
             LastAccessed = DateTime.Parse(payload["lastAccessed"].StringValue),
-            Metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(payload["metadata"].StringValue) 
+            Metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(payload["metadata"].StringValue)
                 ?? new Dictionary<string, string>()
         };
     }

@@ -34,7 +34,7 @@ services:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:6333/"]
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -58,7 +58,7 @@ services:
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
       - AZURE_OPENAI_EMBEDDING_DEPLOYMENT=${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-text-embedding-ada-002}
-      - QDRANT_ENDPOINT=${QDRANT_ENDPOINT:-http://qdrant:6333}
+      - QDRANT_ENDPOINT=${QDRANT_ENDPOINT:-http://qdrant:6334}
       # Azure authentication - using .azure folder from host
       - AZURE_CONFIG_DIR=/home/appuser/.azure
       # Alternative: Use managed identity client ID from azd environment
@@ -85,7 +85,7 @@ services:
       - AZURE_OPENAI_ENDPOINT=${AZURE_OPENAI_ENDPOINT}
       - AZURE_OPENAI_DEPLOYMENT=${AZURE_OPENAI_DEPLOYMENT:-gpt-4o-mini}
       - AZURE_OPENAI_EMBEDDING_DEPLOYMENT=${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-text-embedding-ada-002}
-      - QDRANT_ENDPOINT=${QDRANT_ENDPOINT:-http://qdrant:6333}
+      - QDRANT_ENDPOINT=${QDRANT_ENDPOINT:-http://qdrant:6334}
       - AGENT_MAX_LOOPS_PER_DAY=${AGENT_MAX_LOOPS_PER_DAY:-4000}
       - AGENT_MAX_TOKENS_PER_DAY=${AGENT_MAX_TOKENS_PER_DAY:-8000000}
       - GITHUB_MCP_PAT=${GITHUB_MCP_PAT}

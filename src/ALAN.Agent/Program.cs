@@ -95,7 +95,7 @@ if (!string.IsNullOrEmpty(qdrantEndpoint))
 {
     var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
     logger.LogInformation("Qdrant configured at {Endpoint}, enabling local vector memory", qdrantEndpoint);
-    
+
     builder.Services.AddSingleton<IVectorMemoryService>(sp =>
     {
         return new QdrantMemoryService(
@@ -105,7 +105,7 @@ if (!string.IsNullOrEmpty(qdrantEndpoint))
             sp.GetRequiredService<ILogger<QdrantMemoryService>>(),
             apiKey);
     });
-    
+
     // Register MemoryAgent (depends on AIAgent being registered later)
     builder.Services.AddSingleton<MemoryAgent>();
 }
@@ -113,7 +113,7 @@ else if (!string.IsNullOrEmpty(searchEndpoint))
 {
     var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
     logger.LogInformation("Azure AI Search configured, enabling vector memory");
-    
+
     builder.Services.AddSingleton<IVectorMemoryService>(sp =>
     {
         return new AzureAISearchMemoryService(
@@ -122,7 +122,7 @@ else if (!string.IsNullOrEmpty(searchEndpoint))
             embeddingDeployment,
             sp.GetRequiredService<ILogger<AzureAISearchMemoryService>>());
     });
-    
+
     // Register MemoryAgent (depends on AIAgent being registered later)
     builder.Services.AddSingleton<MemoryAgent>();
 }

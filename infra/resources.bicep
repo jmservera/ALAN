@@ -32,6 +32,14 @@ param openAiModelVersion string
 @description('Planned capacity or throughput setting for the Azure OpenAI deployment')
 param openAiModelCapacity int
 
+// Azure OpenAI Embedding Parameters
+@description('Azure OpenAI embedding deployment name')
+param openAiEmbeddingDeploymentName string
+@description('Azure OpenAI embedding model name')
+param openAiEmbeddingModelName string
+@description('Azure OpenAI embedding model version')
+param openAiEmbeddingModelVersion string
+
 // Azure AI Search Parameters
 @description('SKU for Azure AI Search service')
 param searchServiceSku string
@@ -390,13 +398,25 @@ module openai 'br/public:avm/res/cognitive-services/account:0.9.1' = {
       {
         name: openAiDeploymentName
         sku: {
-          name: 'Standard'
+          name: 'GlobalStandard'
           capacity: openAiModelCapacity
         }
         model: {
           format: 'OpenAI'
           name: openAiModelName
           version: openAiModelVersion
+        }
+      }
+      {
+        name: openAiEmbeddingDeploymentName
+        sku: {
+          name: 'GlobalStandard'
+          capacity: 120
+        }
+        model: {
+          format: 'OpenAI'
+          name: openAiEmbeddingModelName
+          version: openAiEmbeddingModelVersion
         }
       }
     ]
@@ -448,7 +468,7 @@ module searchService 'br/public:avm/res/search/search-service:0.9.0' = {
     publicNetworkAccess: 'Disabled'
     networkRuleSet: {
       ipRules: []
-      bypass: 'AzureServices'
+      bypass: 'AzurePortal'
     }
     privateEndpoints: [
       {
@@ -583,7 +603,7 @@ module agentApp './modules/container-app.bicep' = {
       }
       {
         name: 'AZURE_OPENAI_ENDPOINT'
-        value: openai.outputs.endpoint
+        value: 'https://${openai.outputs.name}.openai.azure.com/'
       }
       {
         name: 'AZURE_OPENAI_DEPLOYMENT'
@@ -591,7 +611,7 @@ module agentApp './modules/container-app.bicep' = {
       }
       {
         name: 'AZURE_AI_SEARCH_ENDPOINT'
-        value: searchService.outputs.endpoint
+        value: 'https://${searchService.outputs.name}.search.windows.net'
       }
       {
         name: 'AGENT_MAX_LOOPS_PER_DAY'
@@ -651,7 +671,7 @@ module chatApiApp './modules/container-app.bicep' = {
       }
       {
         name: 'AZURE_OPENAI_ENDPOINT'
-        value: openai.outputs.endpoint
+        value: 'https://${openai.outputs.name}.openai.azure.com/'
       }
       {
         name: 'AZURE_OPENAI_DEPLOYMENT'
@@ -659,7 +679,7 @@ module chatApiApp './modules/container-app.bicep' = {
       }
       {
         name: 'AZURE_AI_SEARCH_ENDPOINT'
-        value: searchService.outputs.endpoint
+        value: 'https://${searchService.outputs.name}.search.windows.net'
       }
       {
         name: 'AZURE_STORAGE_ACCOUNT_NAME'
@@ -744,11 +764,11 @@ output storageAccountName string = storage.outputs.name
 output storageConnectionString string = 'DefaultEndpointsProtocol=https;AccountName=${storage.outputs.name};EndpointSuffix=${environment().suffixes.storage}'
 
 // OpenAI outputs
-output openAiEndpoint string = openai.outputs.endpoint
+output openAiEndpoint string = 'https://${openai.outputs.name}.openai.azure.com/'
 output openAiName string = openai.outputs.name
 
 // AI Search outputs
-output searchServiceEndpoint string = searchService.outputs.endpoint
+output searchServiceEndpoint string = 'https://${searchService.outputs.name}.search.windows.net'
 output searchServiceName string = searchService.outputs.name
 
 // Container Apps outputs

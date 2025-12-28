@@ -610,6 +610,10 @@ module agentApp './modules/container-app.bicep' = {
         value: openAiDeploymentName
       }
       {
+        name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
+        value: openAiEmbeddingDeploymentName
+      }
+      {
         name: 'AZURE_AI_SEARCH_ENDPOINT'
         value: 'https://${searchService.outputs.name}.search.windows.net'
       }
@@ -676,6 +680,10 @@ module chatApiApp './modules/container-app.bicep' = {
       {
         name: 'AZURE_OPENAI_DEPLOYMENT'
         value: openAiDeploymentName
+      }
+      {
+        name: 'AZURE_OPENAI_EMBEDDING_DEPLOYMENT'
+        value: openAiEmbeddingDeploymentName
       }
       {
         name: 'AZURE_AI_SEARCH_ENDPOINT'

@@ -53,7 +53,7 @@ Respond with ONLY a JSON object in this format:
             .Setup(m => m.GetRecentMemoriesAsync(It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         var logger = Mock.Of<ILogger<MemoryConsolidationService>>();
-        var stateManager = new StateManager(mockShortTerm.Object, mockLongTerm.Object);
+        var stateManager = new StateManager(mockShortTerm.Object, mockLongTerm.Object, Mock.Of<ILogger<StateManager>>());
 
         var memories = new List<MemoryEntry>
         {
@@ -88,7 +88,7 @@ Respond with ONLY a JSON object in this format:
 
         var mockShortTerm = new Mock<IShortTermMemoryService>();
         var logger = Mock.Of<ILogger<MemoryConsolidationService>>();
-        var stateManager = new StateManager(mockShortTerm.Object, mockLongTerm.Object);
+        var stateManager = new StateManager(mockShortTerm.Object, mockLongTerm.Object, Mock.Of<ILogger<StateManager>>());
 
         var thought = new AgentThought
         {
@@ -127,7 +127,7 @@ Respond with ONLY a JSON object in this format:
 
         var mockShortTerm = new Mock<IShortTermMemoryService>();
         var logger = Mock.Of<ILogger<MemoryConsolidationService>>();
-        var stateManager = new StateManager(mockShortTerm.Object, mockLongTerm.Object);
+        var stateManager = new StateManager(mockShortTerm.Object, mockLongTerm.Object, Mock.Of<ILogger<StateManager>>());
 
         var thought = new AgentThought
         {
@@ -167,7 +167,7 @@ Respond with ONLY a JSON object in this format:
         var mockLongTerm = new Mock<ILongTermMemoryService>();
         var mockShortTerm = new Mock<IShortTermMemoryService>();
         var logger = Mock.Of<ILogger<MemoryConsolidationService>>();
-        var stateManager = new StateManager(mockShortTerm.Object, mockLongTerm.Object);
+        var stateManager = new StateManager(mockShortTerm.Object, mockLongTerm.Object, Mock.Of<ILogger<StateManager>>());
         var promptService = CreatePromptService();
         var svc = new MemoryConsolidationService(mockLongTerm.Object, mockShortTerm.Object, stateManager, agent: null!, logger, promptService);
 

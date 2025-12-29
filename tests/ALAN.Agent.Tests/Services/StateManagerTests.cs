@@ -1,6 +1,7 @@
 using ALAN.Agent.Services;
 using ALAN.Shared.Models;
 using ALAN.Shared.Services.Memory;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace ALAN.Agent.Tests.Services;
@@ -9,13 +10,15 @@ public class StateManagerTests
 {
     private readonly Mock<IShortTermMemoryService> _mockShortTermMemory;
     private readonly Mock<ILongTermMemoryService> _mockLongTermMemory;
+    private readonly Mock<ILogger<StateManager>> _mockLogger;
     private readonly StateManager _stateManager;
 
     public StateManagerTests()
     {
         _mockShortTermMemory = new Mock<IShortTermMemoryService>();
         _mockLongTermMemory = new Mock<ILongTermMemoryService>();
-        _stateManager = new StateManager(_mockShortTermMemory.Object, _mockLongTermMemory.Object);
+        _mockLogger = new Mock<ILogger<StateManager>>();
+        _stateManager = new StateManager(_mockShortTermMemory.Object, _mockLongTermMemory.Object, _mockLogger.Object);
     }
 
     [Fact]

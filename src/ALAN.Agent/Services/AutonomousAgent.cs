@@ -497,22 +497,6 @@ public class AutonomousAgent
                 _logger.LogError(clientEx, "Context length exceeded even with minimal memory context ({Size}). Status: {Status}",
                     _currentMemoryContextSize, clientEx.Status);
 
-                // Store context overflow errors for learning
-                var errorMemory = new MemoryEntry
-                {
-                    Type = MemoryType.Error,
-                    Content = $"Context length exceeded with {_currentMemoryContextSize} memories. Model limit reached.",
-                    Summary = "Context overflow - need to reduce memory or response length",
-                    Importance = 0.8,
-                    Tags = ["error", "context-overflow", "azure-openai"]
-                };
-                await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
-
-                // Store in vector memory for semantic search
-                if (_memoryAgent != null)
-                {
-                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(errorMemory, cancellationToken);
-                }
                 break; // Cannot retry further
             }
             catch (System.ClientModel.ClientResultException clientEx)
@@ -520,45 +504,12 @@ public class AutonomousAgent
                 _logger.LogError(clientEx, "Azure OpenAI client error during thinking process. Status: {Status}",
                     clientEx.Status);
 
-                // Store API errors for learning
-                var errorMemory = new MemoryEntry
-                {
-                    Type = MemoryType.Error,
-                    Content = $"Azure OpenAI API error (Status {clientEx.Status}): {clientEx.Message}",
-                    Summary = "API communication error",
-                    Importance = 0.6,
-                    Tags = ["error", "api", "azure-openai"]
-                };
-                await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
-
-                // Store in vector memory for semantic search
-                if (_memoryAgent != null)
-                {
-                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(errorMemory, cancellationToken);
-                }
                 break; // Don't retry for other errors
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during thinking process");
 
-                // Store critical errors directly to long-term memory for persistence
-                // (errors are important enough to skip short-term storage)
-                var errorMemory = new MemoryEntry
-                {
-                    Type = MemoryType.Error,
-                    Content = $"Error during thinking: {ex.Message}",
-                    Summary = "Agent error",
-                    Importance = 0.7,
-                    Tags = ["error", "system"]
-                };
-                await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
-
-                // Store in vector memory for semantic search
-                if (_memoryAgent != null)
-                {
-                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(errorMemory, cancellationToken);
-                }
                 break; // Don't retry on general errors
             }
         }

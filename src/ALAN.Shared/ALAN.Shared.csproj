@@ -7,11 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Azure.AI.OpenAI" Version="2.7.0-beta.2" />
     <PackageReference Include="Azure.Identity" Version="1.13.1" />
+    <PackageReference Include="Azure.Search.Documents" Version="11.6.0" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.22.2" />
     <PackageReference Include="Azure.Storage.Queues" Version="12.22.0" />
     <PackageReference Include="Handlebars.Net" Version="2.1.6" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.9" />
+    <PackageReference Include="Qdrant.Client" Version="1.12.0" />
     <PackageReference Include="System.Text.Json" Version="9.0.0" />
     <PackageReference Include="Polly" Version="8.5.0" />
     <PackageReference Include="Polly.Extensions" Version="8.5.0" />

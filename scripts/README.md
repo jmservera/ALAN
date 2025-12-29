@@ -6,13 +6,15 @@ This directory contains helper scripts for deploying and managing ALAN infrastru
 
 ### `postprovision.sh` / `postprovision.ps1` ⭐ NEW
 
-Post-provision scripts that enable local development access to Azure OpenAI.
+Post-provision scripts that enable local development access to Azure OpenAI and Container Registry.
 
 **Features:**
 
-- ✓ Automatically configures OpenAI access for local development
+- ✓ Automatically configures OpenAI and ACR access for local development
 - ✓ Adds current user's IP to OpenAI network rules
+- ✓ Adds current user's IP to Container Registry network rules
 - ✓ Assigns Cognitive Services OpenAI User role to current user
+- ✓ Assigns AcrPush role to current user for Container Registry
 - ✓ Only runs locally (skips when CI environment variable is set)
 - ✓ Keeps production deployments fully secured
 
@@ -37,7 +39,9 @@ These scripts are automatically invoked by `azd provision` via the `postprovisio
 3. Gets current user's public IP address
 4. Enables public network access on OpenAI resource
 5. Adds current IP to OpenAI network rules
-6. Assigns Cognitive Services OpenAI User role to current user
+6. Adds current IP to Container Registry network rules
+7. Assigns Cognitive Services OpenAI User role to current user
+8. Assigns AcrPush role to current user for Container Registry
 
 **Requirements:**
 

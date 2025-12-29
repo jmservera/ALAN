@@ -16,7 +16,9 @@ public class HumanInputHandlerTests
         var mockLogger = new Mock<ILogger<ALAN.Agent.Services.HumanInputHandler>>();
         var mockStateManager = new Mock<ALAN.Agent.Services.StateManager>(
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
-            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
+            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>(),
+            Mock.Of<Microsoft.Extensions.Logging.ILogger<ALAN.Agent.Services.StateManager>>(),
+            null!);
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
         var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
         
@@ -65,7 +67,9 @@ public class HumanInputHandlerTests
         var mockLogger = new Mock<ILogger<ALAN.Agent.Services.HumanInputHandler>>();
         var mockStateManager = new Mock<ALAN.Agent.Services.StateManager>(
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
-            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
+            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>(),
+            Mock.Of<Microsoft.Extensions.Logging.ILogger<ALAN.Agent.Services.StateManager>>(),
+            null!);
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
         var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
         
@@ -113,7 +117,9 @@ public class HumanInputHandlerTests
         var mockLogger = new Mock<ILogger<ALAN.Agent.Services.HumanInputHandler>>();
         var mockStateManager = new Mock<ALAN.Agent.Services.StateManager>(
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
-            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
+            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>(),
+            Mock.Of<Microsoft.Extensions.Logging.ILogger<ALAN.Agent.Services.StateManager>>(),
+            null!);
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
         var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
         
@@ -145,7 +151,9 @@ public class HumanInputHandlerTests
         var mockLogger = new Mock<ILogger<ALAN.Agent.Services.HumanInputHandler>>();
         var mockStateManager = new Mock<ALAN.Agent.Services.StateManager>(
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
-            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
+            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>(),
+            Mock.Of<Microsoft.Extensions.Logging.ILogger<ALAN.Agent.Services.StateManager>>(),
+            null!);
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
         var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
         
@@ -171,7 +179,9 @@ public class HumanInputHandlerTests
         var mockLogger = new Mock<ILogger<ALAN.Agent.Services.HumanInputHandler>>();
         var mockStateManager = new Mock<ALAN.Agent.Services.StateManager>(
             Mock.Of<ALAN.Shared.Services.Memory.IShortTermMemoryService>(),
-            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>());
+            Mock.Of<ALAN.Shared.Services.Memory.ILongTermMemoryService>(),
+            Mock.Of<Microsoft.Extensions.Logging.ILogger<ALAN.Agent.Services.StateManager>>(),
+            null!);
         var mockQueue = new Mock<IMessageQueue<HumanInput>>();
         var mockMemoryConsolidation = new Mock<IMemoryConsolidationService>();
 

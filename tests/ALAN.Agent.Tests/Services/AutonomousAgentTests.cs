@@ -22,9 +22,9 @@ public class AutonomousAgentTests
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
         var mockConsolidation = new Mock<IMemoryConsolidationService>();
         var mockPromptService = new Mock<IPromptService>();
-        
+
         // Create real service instances with mocked dependencies
-        var stateManager = new StateManager(mockShortTermMemory.Object, mockLongTermMemory.Object);
+        var stateManager = new StateManager(mockShortTermMemory.Object, mockLongTermMemory.Object, Mock.Of<ILogger<StateManager>>());
         var usageTracker = new UsageTracker(Mock.Of<ILogger<UsageTracker>>(), 4000, 8000000);
         var batchLearning = new BatchLearningService(
             mockConsolidation.Object,
@@ -503,7 +503,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var learnings = new List<MemoryEntry>
         {
             new MemoryEntry { Type = MemoryType.Learning, Summary = "L1", Importance = 0.9, Timestamp = DateTime.UtcNow }
@@ -552,7 +552,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var now = DateTime.UtcNow;
         var memories = new List<MemoryEntry>
         {
@@ -593,7 +593,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var actions = new List<AgentAction>
         {
             new AgentAction
@@ -643,7 +643,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         mockLongTermMemory.Setup(m => m.GetMemoriesByTypeAsync(It.IsAny<MemoryType>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Storage failure"));
 
@@ -663,7 +663,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         // Create more than MAX_MEMORY_CONTEXT_SIZE (20) memories
         var manyMemories = Enumerable.Range(1, 30).Select(i => new MemoryEntry
         {
@@ -700,7 +700,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var longTermMemories = new List<MemoryEntry>
         {
             new MemoryEntry { Type = MemoryType.Learning, Summary = "LongTerm1", Importance = 0.9, Timestamp = DateTime.UtcNow.AddHours(-5) }
@@ -747,7 +747,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var completedAction = new AgentAction { Status = ActionStatus.Completed, Output = "Completed", Timestamp = DateTime.UtcNow };
         var runningAction = new AgentAction { Status = ActionStatus.Running, Output = "Running", Timestamp = DateTime.UtcNow };
         var failedAction = new AgentAction { Status = ActionStatus.Failed, Output = "Failed", Timestamp = DateTime.UtcNow };
@@ -789,7 +789,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         // Create 10 completed actions
         var action1 = new AgentAction { Name = "Action1", Output = "Output1", Status = ActionStatus.Completed, Timestamp = DateTime.UtcNow.AddMinutes(-1) };
         var action2 = new AgentAction { Name = "Action2", Output = "Output2", Status = ActionStatus.Completed, Timestamp = DateTime.UtcNow.AddMinutes(-2) };
@@ -839,8 +839,8 @@ public class AutonomousAgentTests
         var mockAIAgent = new Mock<AIAgent>();
         var mockLogger = new Mock<ILogger<AutonomousAgent>>();
         var mockConsolidation = new Mock<IMemoryConsolidationService>();
-        
-        var stateManager = new StateManager(shortTermMemory, longTermMemory);
+
+        var stateManager = new StateManager(shortTermMemory, longTermMemory, Mock.Of<ILogger<StateManager>>());
         var usageTracker = new UsageTracker(Mock.Of<ILogger<UsageTracker>>(), 4000, 8000000);
         var batchLearning = new BatchLearningService(
             mockConsolidation.Object,

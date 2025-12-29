@@ -46,6 +46,37 @@ param openAiModelVersion string = '2024-07-18'
 @description('Azure OpenAI model capacity (in thousands of tokens per minute)')
 param openAiModelCapacity int = 100
 
+// Azure OpenAI Embedding Parameters
+@description('Azure OpenAI embedding deployment name')
+param openAiEmbeddingDeploymentName string = 'text-embedding-3-small'
+
+@description('Azure OpenAI embedding model name')
+param openAiEmbeddingModelName string = 'text-embedding-3-small'
+
+@description('Azure OpenAI embedding model version')
+param openAiEmbeddingModelVersion string = '1'
+
+// Azure AI Search Parameters
+@description('Azure AI Search SKU (basic, standard, standard2, standard3, storage_optimized_l1, storage_optimized_l2)')
+@allowed([
+  'basic'
+  'standard'
+  'standard2'
+  'standard3'
+  'storage_optimized_l1'
+  'storage_optimized_l2'
+])
+param searchServiceSku string = 'basic'
+
+@description('Number of replicas for Azure AI Search (1-12)')
+@minValue(1)
+@maxValue(12)
+param searchServiceReplicaCount int = 1
+
+@description('Number of partitions for Azure AI Search (1, 2, 3, 4, 6, or 12)')
+@allowed([1, 2, 3, 4, 6, 12])
+param searchServicePartitionCount int = 1
+
 // Application Parameters
 @description('Maximum loops per day for the agent')
 param agentMaxLoopsPerDay int = 4000
@@ -125,6 +156,12 @@ module resources './resources.bicep' = {
     openAiModelName: openAiModelName
     openAiModelVersion: openAiModelVersion
     openAiModelCapacity: openAiModelCapacity
+    openAiEmbeddingDeploymentName: openAiEmbeddingDeploymentName
+    openAiEmbeddingModelName: openAiEmbeddingModelName
+    openAiEmbeddingModelVersion: openAiEmbeddingModelVersion
+    searchServiceSku: searchServiceSku
+    searchServiceReplicaCount: searchServiceReplicaCount
+    searchServicePartitionCount: searchServicePartitionCount
     agentMaxLoopsPerDay: agentMaxLoopsPerDay
     agentMaxTokensPerDay: agentMaxTokensPerDay
     agentThinkInterval: agentThinkInterval
@@ -154,10 +191,15 @@ output AZURE_SUBSCRIPTION_ID string = subscription().subscriptionId
 output AZURE_OPENAI_ENDPOINT string = resources.outputs.openAiEndpoint
 output AZURE_OPENAI_NAME string = resources.outputs.openAiName
 output AZURE_OPENAI_DEPLOYMENT string = openAiDeploymentName
+output AZURE_OPENAI_EMBEDDING_DEPLOYMENT string = openAiEmbeddingDeploymentName
 
 // Storage outputs for local development
 output AZURE_STORAGE_ACCOUNT_NAME string = resources.outputs.storageAccountName
 output AZURE_STORAGE_CONNECTION_STRING string = resources.outputs.storageConnectionString
+
+// AI Search outputs for local development
+output AZURE_AI_SEARCH_ENDPOINT string = resources.outputs.searchServiceEndpoint
+output AZURE_AI_SEARCH_NAME string = resources.outputs.searchServiceName
 
 // Container Apps outputs
 output WEB_APP_URL string = resources.outputs.webAppUrl

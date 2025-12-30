@@ -11,10 +11,10 @@ ALAN now supports separate vector database collections for short-term and long-t
 
 ### Collection Separation
 
-| Collection    | Purpose                          | Retrieval Method      | Retention               |
-|---------------|----------------------------------|-----------------------|-------------------------|
-| `short-term`  | Recent thoughts and actions      | Time-ordered (all)    | 8 hours (TTL in blob)   |
-| `long-term`   | Consolidated learnings           | Semantic search       | Permanent               |
+| Collection   | Purpose                     | Retrieval Method   | Retention             |
+| ------------ | --------------------------- | ------------------ | --------------------- |
+| `short-term` | Recent thoughts and actions | Time-ordered (all) | 8 hours (TTL in blob) |
+| `long-term`  | Consolidated learnings      | Semantic search    | Permanent             |
 
 ### Memory Lifecycle
 
@@ -164,18 +164,21 @@ Based on recent context and relevant past experience, what should you do next?
 ### Collection Names
 
 Collections are hardcoded as constants:
+
 - Short-term: `"short-term"`
 - Long-term: `"long-term"`
 
 ### Memory Limits
 
 Configurable via parameters:
+
 - Short-term context: Default 50 items (configurable in `GetShortTermContextAsync`)
 - Long-term context: Default 20 items (configurable in `SearchLongTermContextAsync`)
 
 ### Consolidation Settings
 
 From MemoryConsolidationService:
+
 - Consolidation interval: Every 6 hours
 - Importance threshold: ≥0.5 for promotion to long-term
 - Short-term TTL: 8 hours (blob storage)
@@ -183,6 +186,7 @@ From MemoryConsolidationService:
 ## Testing
 
 All 187 tests passing:
+
 - ✅ 87 tests in ALAN.Agent.Tests
 - ✅ 88 tests in ALAN.Shared.Tests
 - ✅ 12 tests in ALAN.ChatApi.Tests
@@ -208,6 +212,7 @@ _mockVectorMemory
 ### Backward Compatibility
 
 Default parameter values ensure backward compatibility:
+
 - Existing code without collection parameter defaults to `"long-term"`
 - Old memories in single collection can coexist with new dual-collection approach
 
@@ -218,6 +223,7 @@ Both Qdrant and Azure AI Search will automatically create collections/indexes on
 ### Existing Memories
 
 Existing memories in a single collection will remain accessible but should be migrated:
+
 1. Read from old collection
 2. Determine collection based on tags or age
 3. Store in appropriate new collection

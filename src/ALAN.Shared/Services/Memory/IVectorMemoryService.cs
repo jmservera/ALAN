@@ -25,8 +25,8 @@ public interface IVectorMemoryService
     /// <param name="filters">Optional filters (e.g., by type, tags, date range)</param>
     /// <param name="collection">Collection to search (default: long-term)</param>
     Task<List<MemorySearchResult>> SearchMemoriesAsync(
-        string query, 
-        int maxResults = 10, 
+        string query,
+        int maxResults = 10,
         double minScore = 0.7,
         MemorySearchFilters? filters = null,
         string collection = "long-term",
@@ -37,8 +37,8 @@ public interface IVectorMemoryService
     /// Useful for detecting duplicate tasks or similar experiences.
     /// </summary>
     Task<List<MemorySearchResult>> FindSimilarMemoriesAsync(
-        MemoryEntry memory, 
-        int maxResults = 5, 
+        MemoryEntry memory,
+        int maxResults = 5,
         double minScore = 0.8,
         CancellationToken cancellationToken = default);
 

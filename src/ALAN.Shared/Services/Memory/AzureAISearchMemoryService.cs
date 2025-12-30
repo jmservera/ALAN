@@ -20,12 +20,10 @@ namespace ALAN.Shared.Services.Memory;
 public class AzureAISearchMemoryService : IVectorMemoryService
 {
     private readonly SearchIndexClient _indexClient;
-    private readonly SearchClient _searchClient;
     private readonly AzureOpenAIClient _openAIClient;
     private readonly string _embeddingDeployment;
     private readonly ILogger<AzureAISearchMemoryService> _logger;
     private readonly ResiliencePipeline _resiliencePipeline;
-    private const string IndexName = "memory-index";
 
     public AzureAISearchMemoryService(
         string searchEndpoint,
@@ -44,38 +42,43 @@ public class AzureAISearchMemoryService : IVectorMemoryService
             ? new SearchIndexClient(new Uri(searchEndpoint), searchCredential)
             : new SearchIndexClient(new Uri(searchEndpoint), new DefaultAzureCredential());
 
-        _searchClient = _indexClient.GetSearchClient(IndexName);
-
         // Initialize OpenAI client for embeddings
         _openAIClient = openAICredential != null
             ? new AzureOpenAIClient(new Uri(openAIEndpoint), openAICredential)
             : new AzureOpenAIClient(new Uri(openAIEndpoint), new DefaultAzureCredential());
 
-        _logger.LogInformation("AzureAISearchMemoryService initialized with index: {IndexName}", IndexName);
+        _logger.LogInformation("AzureAISearchMemoryService initialized");
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        // Initialize both long-term and short-term indexes
+        await EnsureIndexExistsAsync("long-term", cancellationToken);
+        await EnsureIndexExistsAsync("short-term", cancellationToken);
+    }
+
+    private async Task EnsureIndexExistsAsync(string indexName, CancellationToken cancellationToken)
+    {
         try
         {
-            _logger.LogInformation("Initializing Azure AI Search index: {IndexName}", IndexName);
+            _logger.LogInformation("Initializing Azure AI Search index: {IndexName}", indexName);
 
             await _resiliencePipeline.ExecuteAsync(async ct =>
             {
                 // Check if index exists
                 try
                 {
-                    await _indexClient.GetIndexAsync(IndexName, ct);
-                    _logger.LogInformation("Index {IndexName} already exists", IndexName);
+                    await _indexClient.GetIndexAsync(indexName, ct);
+                    _logger.LogInformation("Index {IndexName} already exists", indexName);
                     return;
                 }
                 catch (RequestFailedException ex) when (ex.Status == 404)
                 {
-                    _logger.LogInformation("Index {IndexName} does not exist, creating...", IndexName);
+                    _logger.LogInformation("Index {IndexName} does not exist, creating...", indexName);
                 }
 
                 // Create the index with vector search configuration
-                var index = new SearchIndex(IndexName)
+                var index = new SearchIndex(indexName)
                 {
                     Fields =
                     {
@@ -105,20 +108,23 @@ public class AzureAISearchMemoryService : IVectorMemoryService
                 };
 
                 await _indexClient.CreateIndexAsync(index, ct);
-                _logger.LogInformation("Index {IndexName} created successfully", IndexName);
+                _logger.LogInformation("Index {IndexName} created successfully", indexName);
             }, cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize Azure AI Search index");
+            _logger.LogError(ex, "Failed to initialize Azure AI Search index {IndexName}", indexName);
             throw;
         }
     }
 
-    public async Task<string> StoreMemoryAsync(MemoryEntry memory, CancellationToken cancellationToken = default)
+    public async Task<string> StoreMemoryAsync(MemoryEntry memory, string collection = "long-term", CancellationToken cancellationToken = default)
     {
         try
         {
+            // Ensure index exists
+            await EnsureIndexExistsAsync(collection, cancellationToken);
+
             // Generate embedding for the memory content
             var embedding = await GenerateEmbeddingAsync(memory.Content, cancellationToken);
 
@@ -137,13 +143,14 @@ public class AzureAISearchMemoryService : IVectorMemoryService
                 ContentVector = embedding
             };
 
+            var searchClient = _indexClient.GetSearchClient(collection);
             await _resiliencePipeline.ExecuteAsync(async ct =>
             {
                 var batch = IndexDocumentsBatch.Upload([document]);
-                await _searchClient.IndexDocumentsAsync(batch, cancellationToken: ct);
+                await searchClient.IndexDocumentsAsync(batch, cancellationToken: ct);
             }, cancellationToken);
 
-            _logger.LogInformation("Stored memory {Id} in vector search index", memory.Id);
+            _logger.LogDebug("Stored memory {Id} in vector search index {Collection}", memory.Id, collection);
             return memory.Id;
         }
         catch (Exception ex)
@@ -158,6 +165,7 @@ public class AzureAISearchMemoryService : IVectorMemoryService
         int maxResults = 10,
         double minScore = 0.7,
         MemorySearchFilters? filters = null,
+        string collection = "long-term",
         CancellationToken cancellationToken = default)
     {
         try
@@ -214,10 +222,11 @@ public class AzureAISearchMemoryService : IVectorMemoryService
             }
 
             var results = new List<MemorySearchResult>();
+            var searchClient = _indexClient.GetSearchClient(collection);
 
             await _resiliencePipeline.ExecuteAsync(async ct =>
             {
-                var response = await _searchClient.SearchAsync<MemorySearchDocument>("*", searchOptions, ct);
+                var response = await searchClient.SearchAsync<MemorySearchDocument>("*", searchOptions, ct);
 
                 await foreach (var result in response.Value.GetResultsAsync())
                 {
@@ -251,19 +260,20 @@ public class AzureAISearchMemoryService : IVectorMemoryService
         CancellationToken cancellationToken = default)
     {
         // Use the memory's content to find similar memories
-        var results = await SearchMemoriesAsync(memory.Content, maxResults + 1, minScore, null, cancellationToken);
+        var results = await SearchMemoriesAsync(memory.Content, maxResults + 1, minScore, cancellationToken: cancellationToken);
 
         // Filter out the memory itself
         return results.Where(r => r.Memory.Id != memory.Id).Take(maxResults).ToList();
     }
 
-    public async Task<MemoryEntry?> GetMemoryAsync(string id, CancellationToken cancellationToken = default)
+    public async Task<MemoryEntry?> GetMemoryAsync(string id, string collection = "long-term", CancellationToken cancellationToken = default)
     {
         try
         {
+            var searchClient = _indexClient.GetSearchClient(collection);
             return await _resiliencePipeline.ExecuteAsync(async ct =>
             {
-                var response = await _searchClient.GetDocumentAsync<MemorySearchDocument>(id, cancellationToken: ct);
+                var response = await searchClient.GetDocumentAsync<MemorySearchDocument>(id, cancellationToken: ct);
                 return ConvertToMemoryEntry(response.Value);
             }, cancellationToken);
         }
@@ -273,28 +283,72 @@ public class AzureAISearchMemoryService : IVectorMemoryService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get memory {Id}", id);
+            _logger.LogError(ex, "Failed to get memory {Id} from collection {Collection}", id, collection);
             throw;
         }
     }
 
-    public async Task<bool> DeleteMemoryAsync(string id, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteMemoryAsync(string id, string collection = "long-term", CancellationToken cancellationToken = default)
     {
         try
         {
+            var searchClient = _indexClient.GetSearchClient(collection);
             await _resiliencePipeline.ExecuteAsync(async ct =>
             {
                 var batch = IndexDocumentsBatch.Delete("id", [id]);
-                await _searchClient.IndexDocumentsAsync(batch, cancellationToken: ct);
+                await searchClient.IndexDocumentsAsync(batch, cancellationToken: ct);
             }, cancellationToken);
 
-            _logger.LogInformation("Deleted memory {Id} from vector search index", id);
+            _logger.LogInformation("Deleted memory {Id} from vector search index {Collection}", id, collection);
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete memory {Id}", id);
+            _logger.LogError(ex, "Failed to delete memory {Id} from collection {Collection}", id, collection);
             return false;
+        }
+    }
+
+    public async Task<List<MemoryEntry>> GetAllRecentMemoriesAsync(
+        int maxResults = 50,
+        string collection = "short-term",
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var searchClient = _indexClient.GetSearchClient(collection);
+            var searchOptions = new SearchOptions
+            {
+                Size = maxResults,
+                OrderBy = { "timestamp desc" },
+                Select = { "id", "content", "summary", "type", "timestamp", "importance", "tags", "accessCount", "lastAccessed", "metadata" }
+            };
+
+            var results = new List<MemoryEntry>();
+
+            await _resiliencePipeline.ExecuteAsync(async ct =>
+            {
+                var response = await searchClient.SearchAsync<MemorySearchDocument>("*", searchOptions, ct);
+
+                await foreach (var result in response.Value.GetResultsAsync())
+                {
+                    var memory = ConvertToMemoryEntry(result.Document);
+                    if (memory != null)
+                    {
+                        results.Add(memory);
+                    }
+                }
+            }, cancellationToken);
+
+            _logger.LogDebug("Retrieved {Count} recent memories from collection {Collection}",
+                results.Count, collection);
+
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve recent memories from collection {Collection}", collection);
+            return new List<MemoryEntry>();
         }
     }
 
@@ -302,12 +356,17 @@ public class AzureAISearchMemoryService : IVectorMemoryService
     {
         try
         {
-            var memory = await GetMemoryAsync(id, cancellationToken);
+            // Try both collections (short-term first, then long-term)
+            var memory = await GetMemoryAsync(id, "short-term", cancellationToken)
+                ?? await GetMemoryAsync(id, "long-term", cancellationToken);
+
             if (memory != null)
             {
                 memory.AccessCount++;
                 memory.LastAccessed = DateTime.UtcNow;
-                await StoreMemoryAsync(memory, cancellationToken);
+                // Determine which collection to update based on tags
+                var collection = memory.Tags.Contains("short-term") ? "short-term" : "long-term";
+                await StoreMemoryAsync(memory, collection, cancellationToken);
             }
         }
         catch (Exception ex)
@@ -320,11 +379,23 @@ public class AzureAISearchMemoryService : IVectorMemoryService
     {
         try
         {
-            return await _resiliencePipeline.ExecuteAsync(async ct =>
+            // Count memories in both collections
+            long shortTermCount = 0;
+            long longTermCount = 0;
+
+            var shortTermClient = _indexClient.GetSearchClient("short-term");
+            var longTermClient = _indexClient.GetSearchClient("long-term");
+
+            await _resiliencePipeline.ExecuteAsync(async ct =>
             {
-                var response = await _searchClient.SearchAsync<MemorySearchDocument>("*", new SearchOptions { Size = 0, IncludeTotalCount = true }, ct);
-                return response.Value.TotalCount ?? 0;
+                var shortTermResponse = await shortTermClient.SearchAsync<MemorySearchDocument>("*", new SearchOptions { Size = 0, IncludeTotalCount = true }, ct);
+                shortTermCount = shortTermResponse.Value.TotalCount ?? 0;
+
+                var longTermResponse = await longTermClient.SearchAsync<MemorySearchDocument>("*", new SearchOptions { Size = 0, IncludeTotalCount = true }, ct);
+                longTermCount = longTermResponse.Value.TotalCount ?? 0;
             }, cancellationToken);
+
+            return shortTermCount + longTermCount;
         }
         catch (Exception ex)
         {

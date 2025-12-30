@@ -54,6 +54,7 @@ public class MemoryAgentTests
                 It.IsAny<int>(),
                 It.IsAny<double>(),
                 It.IsAny<MemorySearchFilters?>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(expectedResults);
 
@@ -69,6 +70,7 @@ public class MemoryAgentTests
             10,
             0.7,
             null,
+            "long-term",
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -96,6 +98,7 @@ public class MemoryAgentTests
                 It.IsAny<int>(),
                 It.IsAny<double>(),
                 It.IsAny<MemorySearchFilters?>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([expectedMatch]);
 
@@ -121,6 +124,7 @@ public class MemoryAgentTests
                 It.IsAny<int>(),
                 It.IsAny<double>(),
                 It.IsAny<MemorySearchFilters?>(),
+                It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
 
@@ -170,7 +174,7 @@ public class MemoryAgentTests
         };
 
         _mockVectorMemory
-            .Setup(v => v.StoreMemoryAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()))
+            .Setup(v => v.StoreMemoryAsync(It.IsAny<MemoryEntry>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("test-memory");
 
         // Act
@@ -180,6 +184,7 @@ public class MemoryAgentTests
         Assert.True(result);
         _mockVectorMemory.Verify(v => v.StoreMemoryAsync(
             It.Is<MemoryEntry>(m => m.Id == "test-memory"),
+            "long-term",
             It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -200,8 +205,8 @@ public class MemoryAgentTests
             .ReturnsAsync(memories);
 
         _mockVectorMemory
-            .Setup(v => v.StoreMemoryAsync(It.IsAny<MemoryEntry>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync((MemoryEntry m, CancellationToken ct) => m.Id);
+            .Setup(v => v.StoreMemoryAsync(It.IsAny<MemoryEntry>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((MemoryEntry m, string c, CancellationToken ct) => m.Id);
 
         // Act
         var count = await agent.BatchMigrateMemoriesAsync(batchSize: 100);
@@ -210,6 +215,7 @@ public class MemoryAgentTests
         Assert.Equal(3, count);
         _mockVectorMemory.Verify(v => v.StoreMemoryAsync(
             It.IsAny<MemoryEntry>(),
+            It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Exactly(3));
     }
 

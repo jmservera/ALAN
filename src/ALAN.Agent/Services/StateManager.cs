@@ -76,7 +76,7 @@ public class StateManager
                         Timestamp = thought.Timestamp
                     };
 
-                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, default);
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, default, "short-term");
                     _logger.LogTrace("Thought {Id} stored in vector search", thought.Id);
                 }
                 catch (Exception ex)
@@ -125,7 +125,7 @@ public class StateManager
                         Timestamp = action.Timestamp
                     };
 
-                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, default);
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, default, "short-term");
                     _logger.LogTrace("Action {Id} stored in vector search", action.Id);
                 }
                 catch (Exception ex)
@@ -162,7 +162,7 @@ public class StateManager
                         Timestamp = action.Timestamp
                     };
 
-                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, default);
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, default, "short-term");
                     _logger.LogTrace("Action {Id} updated in vector search", action.Id);
                 }
                 catch (Exception ex)

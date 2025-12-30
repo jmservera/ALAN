@@ -1,3 +1,4 @@
+using ALAN.Shared.Models;
 using ALAN.Shared.Services.Memory;
 using Microsoft.AspNetCore.Mvc;
 
@@ -131,9 +132,18 @@ public class MemoryController : ControllerBase
     {
         try
         {
-            var memory = _vectorMemory != null
-                ? await _vectorMemory.GetMemoryAsync(id, cancellationToken)
-                : await _longTermMemory.GetMemoryAsync(id, cancellationToken);
+            MemoryEntry? memory = null;
+
+            if (_vectorMemory != null)
+            {
+                // Try both collections
+                memory = await _vectorMemory.GetMemoryAsync(id, "short-term", cancellationToken)
+                    ?? await _vectorMemory.GetMemoryAsync(id, "long-term", cancellationToken);
+            }
+            else
+            {
+                memory = await _longTermMemory.GetMemoryAsync(id, cancellationToken);
+            }
 
             if (memory == null)
             {

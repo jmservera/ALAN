@@ -69,6 +69,123 @@ public class MemoryAgent
     }
 
     /// <summary>
+    /// Retrieves all recent short-term memories (immediate context).
+    /// Used to provide the agent with recent thoughts and actions without semantic search.
+    /// </summary>
+    public async Task<List<MemoryEntry>> GetShortTermContextAsync(
+        int maxResults = 50,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Retrieving short-term memory context (max: {Max})", maxResults);
+
+        try
+        {
+            var memories = await _vectorMemory.GetAllRecentMemoriesAsync(
+                maxResults: maxResults,
+                collection: "short-term",
+                cancellationToken: cancellationToken);
+
+            _logger.LogInformation("Retrieved {Count} short-term memories", memories.Count);
+            return memories;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve short-term context");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Searches long-term consolidated memories for relevant context.
+    /// Used to find task-relevant knowledge from past experiences.
+    /// </summary>
+    public async Task<List<MemorySearchResult>> SearchLongTermContextAsync(
+        string taskDescription,
+        int maxResults = 20,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogDebug("Searching long-term memory context for: {Task}", taskDescription);
+
+        try
+        {
+            var results = await _vectorMemory.SearchMemoriesAsync(
+                query: taskDescription,
+                maxResults: maxResults,
+                minScore: 0.7,
+                filters: null,
+                collection: "long-term",
+                cancellationToken: cancellationToken);
+
+            _logger.LogInformation("Found {Count} relevant long-term memories", results.Count);
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to search long-term context");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Combines short-term (immediate) and long-term (relevant) memories for agent context.
+    /// </summary>
+    public async Task<string> BuildCombinedMemoryContextAsync(
+        string taskDescription,
+        int maxShortTerm = 30,
+        int maxLongTerm = 15,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Get recent short-term memories (immediate context)
+            var shortTermMemories = await GetShortTermContextAsync(maxShortTerm, cancellationToken);
+
+            // Search long-term memories for relevance (learned knowledge)
+            var longTermResults = await SearchLongTermContextAsync(taskDescription, maxLongTerm, cancellationToken);
+
+            // Build formatted context
+            var context = new System.Text.StringBuilder();
+
+            if (shortTermMemories.Count > 0)
+            {
+                context.AppendLine("## Recent Context (Short-term Memory)");
+                context.AppendLine();
+                foreach (var memory in shortTermMemories.Take(maxShortTerm))
+                {
+                    context.AppendLine($"- [{memory.Type}] {memory.Summary}");
+                    if (memory.Importance >= 0.8)
+                    {
+                        context.AppendLine($"  {memory.Content}");
+                    }
+                }
+                context.AppendLine();
+            }
+
+            if (longTermResults.Count > 0)
+            {
+                context.AppendLine("## Relevant Past Experience (Long-term Memory)");
+                context.AppendLine();
+                foreach (var result in longTermResults.Take(maxLongTerm))
+                {
+                    var memory = result.Memory;
+                    context.AppendLine($"- [{memory.Type}] {memory.Summary} (relevance: {result.Score:F2})");
+                    if (memory.Importance >= 0.7)
+                    {
+                        context.AppendLine($"  {memory.Content}");
+                    }
+                }
+            }
+
+            return context.ToString();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to build combined memory context");
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
     /// Checks if a similar task has been completed before to avoid duplication.
     /// Returns the memory of the completed task if found.
     /// </summary>
@@ -203,17 +320,18 @@ public class MemoryAgent
     /// </summary>
     public async Task<bool> MigrateMemoryToVectorSearchAsync(
         MemoryEntry memory,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string collection = "long-term")
     {
         try
         {
-            _logger.LogInformation("Migrating memory {Id} to vector search", memory.Id);
-            await _vectorMemory.StoreMemoryAsync(memory, cancellationToken);
+            _logger.LogDebug("Migrating memory {Id} to vector search collection {Collection}", memory.Id, collection);
+            await _vectorMemory.StoreMemoryAsync(memory, collection, cancellationToken);
             return true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to migrate memory {Id} to vector search", memory.Id);
+            _logger.LogError(ex, "Failed to migrate memory {Id} to vector search collection {Collection}", memory.Id, collection);
             return false;
         }
     }

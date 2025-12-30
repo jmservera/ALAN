@@ -184,7 +184,7 @@ public class MemoryConsolidationService : IMemoryConsolidationService
                 // Also store in vector memory if available
                 if (_memoryAgent != null)
                 {
-                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken);
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken, "long-term");
                 }
 
                 thoughtsStored++;
@@ -217,7 +217,7 @@ public class MemoryConsolidationService : IMemoryConsolidationService
                 // Also store in vector memory if available
                 if (_memoryAgent != null)
                 {
-                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken);
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken, "long-term");
                 }
 
                 actionsStored++;
@@ -306,7 +306,7 @@ public class MemoryConsolidationService : IMemoryConsolidationService
             // Also store in vector memory if available
             if (_memoryAgent != null)
             {
-                await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken);
+                await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken, "long-term");
             }
         }
         catch (Exception ex)

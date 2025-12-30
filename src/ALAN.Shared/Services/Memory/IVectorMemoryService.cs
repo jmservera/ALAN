@@ -11,7 +11,9 @@ public interface IVectorMemoryService
     /// <summary>
     /// Stores a memory with vector embeddings for semantic search.
     /// </summary>
-    Task<string> StoreMemoryAsync(MemoryEntry memory, CancellationToken cancellationToken = default);
+    /// <param name="memory">Memory entry to store</param>
+    /// <param name="collection">Collection name (default: long-term, short-term for temporary context)</param>
+    Task<string> StoreMemoryAsync(MemoryEntry memory, string collection = "long-term", CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Searches for memories semantically similar to the query.
@@ -21,11 +23,13 @@ public interface IVectorMemoryService
     /// <param name="maxResults">Maximum number of results to return</param>
     /// <param name="minScore">Minimum similarity score (0.0 to 1.0)</param>
     /// <param name="filters">Optional filters (e.g., by type, tags, date range)</param>
+    /// <param name="collection">Collection to search (default: long-term)</param>
     Task<List<MemorySearchResult>> SearchMemoriesAsync(
         string query, 
         int maxResults = 10, 
         double minScore = 0.7,
         MemorySearchFilters? filters = null,
+        string collection = "long-term",
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -41,12 +45,18 @@ public interface IVectorMemoryService
     /// <summary>
     /// Gets a specific memory by ID.
     /// </summary>
-    Task<MemoryEntry?> GetMemoryAsync(string id, CancellationToken cancellationToken = default);
+    Task<MemoryEntry?> GetMemoryAsync(string id, string collection = "long-term", CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Deletes a memory by ID.
     /// </summary>
-    Task<bool> DeleteMemoryAsync(string id, CancellationToken cancellationToken = default);
+    Task<bool> DeleteMemoryAsync(string id, string collection = "long-term", CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets all recent memories from a collection without semantic search.
+    /// Useful for retrieving all short-term memories as immediate context.
+    /// </summary>
+    Task<List<MemoryEntry>> GetAllRecentMemoriesAsync(int maxResults = 50, string collection = "short-term", CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates memory access tracking.

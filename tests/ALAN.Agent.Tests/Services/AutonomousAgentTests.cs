@@ -1078,7 +1078,8 @@ public class AutonomousAgentTests
         // Act - Request with minimal token budget (simulating the retry scenario)
         // In the old implementation, this would keep halving the message count but never get below 1 message
         // Leading to an infinite loop if that 1 message is too large
-        var result = _agent.BuildMemoryContext(maxTokens: 500); // MIN_MEMORY_CONTEXT_TOKENS
+        // Using 500 tokens which matches MIN_MEMORY_CONTEXT_TOKENS in AutonomousAgent
+        var result = _agent.BuildMemoryContext(maxTokens: 500);
 
         // Assert - Should NOT throw an exception or hang
         // Should return a truncated version that fits within the token budget

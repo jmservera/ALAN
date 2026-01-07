@@ -848,9 +848,8 @@ public class AutonomousAgent
         if (tokens.Count <= maxTokens) return text;
 
         // Take only the tokens that fit and decode back to text
-        // Note: ToList() is required as Decode expects IList<int>
-        var truncatedTokens = tokens.Take(maxTokens).ToList();
-        return _tokenEncoder.Decode(truncatedTokens);
+        // ToArray() is more efficient than ToList() for this single-use scenario
+        return _tokenEncoder.Decode(tokens.Take(maxTokens).ToArray());
     }
 
     public void Stop()

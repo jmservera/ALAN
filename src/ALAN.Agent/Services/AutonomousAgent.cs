@@ -12,6 +12,7 @@ namespace ALAN.Agent.Services;
 
 public class AutonomousAgent
 {
+    // TODO: BuildMemoryContext should build the memory with a maximum context size in tokens or characters, not messages, because sometimes few messages can have a long context size. So, first rebuild the tests and then rebuild how memory is packaged to avoid entering an inifinite loop when memories are too big.
     // Memory configuration constants
     private const double IMPORTANCE_WEIGHT = 0.7;
     private const double RECENCY_WEIGHT = 0.3;

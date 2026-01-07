@@ -7,17 +7,19 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Polly;
 using System.Text.Json;
+using SharpToken;
 
 namespace ALAN.Agent.Services;
 
 public class AutonomousAgent
 {
-    // TODO: BuildMemoryContext should build the memory with a maximum context size in tokens or characters, not messages, because sometimes few messages can have a long context size. So, first rebuild the tests and then rebuild how memory is packaged to avoid entering an inifinite loop when memories are too big.
     // Memory configuration constants
     private const double IMPORTANCE_WEIGHT = 0.7;
     private const double RECENCY_WEIGHT = 0.3;
     private const int RECENCY_CUTOFF_DAYS = 7;
-    private const int MAX_MEMORY_CONTEXT_SIZE = 20;
+    private const int MAX_MEMORY_CONTEXT_SIZE = 20; // Max number of memory entries
+    private const int MAX_MEMORY_CONTEXT_TOKENS = 4000; // Max tokens for memory context (~3% of 128k context)
+    private const int MIN_MEMORY_CONTEXT_TOKENS = 500; // Minimum tokens to always include
     private const int MEMORY_REFRESH_INTERVAL_ITERATIONS = 10;
     private const int MEMORY_REFRESH_INTERVAL_HOURS = 1;
     private const double HIGH_IMPORTANCE_THRESHOLD = 0.8;
@@ -44,7 +46,8 @@ public class AutonomousAgent
     private int _iterationCount = 0;
     private volatile List<MemoryEntry> _recentMemories = new();
     private DateTime _lastMemoryLoad = DateTime.MinValue;
-    private int _currentMemoryContextSize = MAX_MEMORY_CONTEXT_SIZE;
+    private int _currentMemoryContextTokens = MAX_MEMORY_CONTEXT_TOKENS;
+    private readonly GptEncoding _tokenEncoder;
 
     public AutonomousAgent(
         AIAgent agent,
@@ -71,6 +74,7 @@ public class AutonomousAgent
         _memoryAgent = memoryAgent;
         _resiliencePipeline = ResiliencePolicy.CreateOpenAIRetryPipeline(logger);
         _humanInputHandler.SetAgent(this);
+        _tokenEncoder = GptEncoding.GetEncoding("cl100k_base"); // Used by gpt-4o-mini
 
         if (_memoryAgent != null)
         {
@@ -427,7 +431,6 @@ public class AutonomousAgent
         }
 
         // Get AI response - retry with reduced context if needed
-        const int minMemoryContextSize = 5;
         int retryAttempt = 0;
         const int maxRetries = 3;
 
@@ -437,7 +440,7 @@ public class AutonomousAgent
             {
                 directive = _receivedDirective,
                 memoryCount = _recentMemories.Count,
-                memoryContext = BuildMemoryContext(_currentMemoryContextSize)
+                memoryContext = BuildMemoryContext(_currentMemoryContextTokens)
             });
             _logger.LogTrace("Agent prompt: {Prompt}", prompt.Length > 500 ? string.Concat(prompt.AsSpan(0, 500), "...") : prompt);
 
@@ -448,11 +451,11 @@ public class AutonomousAgent
                     cancellationToken);
                 var response = result.Text ?? result.ToString();
 
-                // Success - restore full context size for next iteration
-                if (_currentMemoryContextSize < MAX_MEMORY_CONTEXT_SIZE)
+                // Success - restore full context budget for next iteration
+                if (_currentMemoryContextTokens < MAX_MEMORY_CONTEXT_TOKENS)
                 {
-                    _logger.LogInformation("Context length issue resolved. Restoring memory context to {Size}", MAX_MEMORY_CONTEXT_SIZE);
-                    _currentMemoryContextSize = MAX_MEMORY_CONTEXT_SIZE;
+                    _logger.LogInformation("Context length issue resolved. Restoring memory context to {Tokens} tokens", MAX_MEMORY_CONTEXT_TOKENS);
+                    _currentMemoryContextTokens = MAX_MEMORY_CONTEXT_TOKENS;
                 }
 
                 // Extract tool call information (minimal metadata)
@@ -485,18 +488,18 @@ public class AutonomousAgent
             {
                 retryAttempt++;
 
-                if (_currentMemoryContextSize > minMemoryContextSize && retryAttempt <= maxRetries)
+                if (_currentMemoryContextTokens > MIN_MEMORY_CONTEXT_TOKENS && retryAttempt <= maxRetries)
                 {
-                    // Reduce memory context size by half
-                    var newSize = Math.Max(minMemoryContextSize, _currentMemoryContextSize / 2);
-                    _logger.LogWarning("Context length exceeded ({CurrentSize} memories). Reducing to {NewSize} and retrying (attempt {Attempt}/{MaxRetries})",
-                        _currentMemoryContextSize, newSize, retryAttempt, maxRetries);
-                    _currentMemoryContextSize = newSize;
+                    // Reduce memory context token budget by half
+                    var newTokens = Math.Max(MIN_MEMORY_CONTEXT_TOKENS, _currentMemoryContextTokens / 2);
+                    _logger.LogWarning("Context length exceeded ({CurrentTokens} tokens). Reducing to {NewTokens} tokens and retrying (attempt {Attempt}/{MaxRetries})",
+                        _currentMemoryContextTokens, newTokens, retryAttempt, maxRetries);
+                    _currentMemoryContextTokens = newTokens;
                     continue; // Retry with reduced context
                 }
 
-                _logger.LogError(clientEx, "Context length exceeded even with minimal memory context ({Size}). Status: {Status}",
-                    _currentMemoryContextSize, clientEx.Status);
+                _logger.LogError(clientEx, "Context length exceeded even with minimal memory context ({Tokens} tokens). Status: {Status}",
+                    _currentMemoryContextTokens, clientEx.Status);
 
                 break; // Cannot retry further
             }
@@ -716,8 +719,9 @@ public class AutonomousAgent
     /// <summary>
     /// Builds a formatted string containing relevant memory context for the current iteration.
     /// This provides the agent with accumulated knowledge from previous iterations.
+    /// Uses token-based limiting to prevent context overflow while maximizing information density.
     /// </summary>
-    internal string BuildMemoryContext(int maxMemories = MAX_MEMORY_CONTEXT_SIZE)
+    internal string BuildMemoryContext(int maxTokens = MAX_MEMORY_CONTEXT_TOKENS)
     {
         if (!_recentMemories.Any())
         {
@@ -725,12 +729,10 @@ public class AutonomousAgent
         }
 
         var context = new System.Text.StringBuilder();
-
-        // Limit the total number of memories if context size needs to be reduced
-        var memoriesToUse = _recentMemories.Take(maxMemories).ToList();
+        int currentTokens = 0;
 
         // Group memories by type for better organization
-        var groupedMemories = memoriesToUse.GroupBy(m => m.Type).OrderByDescending(g => g.Key switch
+        var groupedMemories = _recentMemories.GroupBy(m => m.Type).OrderByDescending(g => g.Key switch
         {
             MemoryType.Learning => 5,
             MemoryType.Reflection => 4,
@@ -741,28 +743,112 @@ public class AutonomousAgent
 
         foreach (var group in groupedMemories)
         {
+            // Try adding the group header
             var entryWord = group.Count() == 1 ? "entry" : "entries";
-            context.AppendLine($"\n### {group.Key} ({group.Count()} {entryWord}):");
+            var groupHeader = $"\n### {group.Key} ({group.Count()} {entryWord}):\n";
+            var headerTokens = _tokenEncoder.CountTokens(groupHeader);
 
+            // If even the header would exceed the budget, stop
+            if (currentTokens + headerTokens > maxTokens)
+            {
+                _logger.LogDebug("Reached token limit ({Current}/{Max}) before adding {Type} group",
+                    currentTokens, maxTokens, group.Key);
+                break;
+            }
+
+            // Reserve space for the header
+            var tempContext = new System.Text.StringBuilder();
+            int groupTokens = headerTokens;
+
+            // Process memories in this group by importance, limiting to top 5
             foreach (var memory in group.OrderByDescending(m => m.Importance).Take(5))
             {
                 var age = (DateTime.UtcNow - memory.Timestamp).TotalHours;
                 var ageStr = age < 24 ? $"{age:F0}h ago" : $"{age / 24:F0}d ago";
 
-                context.AppendLine($"- [{ageStr}, importance: {memory.Importance:F2}] {memory.Summary}");
+                var memoryLine = $"- [{ageStr}, importance: {memory.Importance:F2}] {memory.Summary}\n";
+                var memoryLineTokens = _tokenEncoder.CountTokens(memoryLine);
 
-                // Include full content for high-importance items
-                if (memory.Importance >= HIGH_IMPORTANCE_THRESHOLD && !string.IsNullOrEmpty(memory.Content) && memory.Content != memory.Summary)
+                // Check if we can include full content for high-importance items
+                string? detailsLine = null;
+                int detailsTokens = 0;
+                if (memory.Importance >= HIGH_IMPORTANCE_THRESHOLD && 
+                    !string.IsNullOrEmpty(memory.Content) && 
+                    memory.Content != memory.Summary)
                 {
                     var contentPreview = memory.Content.Length > CONTENT_PREVIEW_MAX_LENGTH
                         ? memory.Content.Substring(0, CONTENT_PREVIEW_MAX_LENGTH) + "..."
                         : memory.Content;
-                    context.AppendLine($"  Details: {contentPreview}");
+                    detailsLine = $"  Details: {contentPreview}\n";
+                    detailsTokens = _tokenEncoder.CountTokens(detailsLine);
                 }
+
+                // Calculate total tokens needed for this memory entry
+                var totalMemoryTokens = memoryLineTokens + detailsTokens;
+
+                // Check if adding this memory would exceed the budget
+                if (currentTokens + groupTokens + totalMemoryTokens > maxTokens)
+                {
+                    // If we haven't added any memories to this group yet, try to add at least a truncated version
+                    if (tempContext.Length == 0)
+                    {
+                        // Truncate the summary to fit within budget
+                        var availableTokens = maxTokens - currentTokens - groupTokens - _tokenEncoder.CountTokens($"- [{ageStr}, importance: {memory.Importance:F2}] ...\n");
+                        if (availableTokens > 20) // Minimum viable summary
+                        {
+                            var truncatedSummary = TruncateToTokenLimit(memory.Summary, availableTokens);
+                            memoryLine = $"- [{ageStr}, importance: {memory.Importance:F2}] {truncatedSummary}...\n";
+                            tempContext.Append(memoryLine);
+                            groupTokens += _tokenEncoder.CountTokens(memoryLine);
+                            _logger.LogDebug("Truncated memory summary to fit within token budget");
+                        }
+                    }
+                    _logger.LogDebug("Reached token limit ({Current}/{Max}) while adding {Type} memories",
+                        currentTokens + groupTokens, maxTokens, group.Key);
+                    break;
+                }
+
+                // Add the memory to the group
+                tempContext.Append(memoryLine);
+                groupTokens += memoryLineTokens;
+
+                // Add details if available and included
+                if (detailsLine != null)
+                {
+                    tempContext.Append(detailsLine);
+                    groupTokens += detailsTokens;
+                }
+            }
+
+            // If we added any memories to this group, commit it to the main context
+            if (tempContext.Length > 0)
+            {
+                context.Append(groupHeader);
+                context.Append(tempContext);
+                currentTokens += groupTokens;
             }
         }
 
-        return context.ToString();
+        var finalContext = context.ToString();
+        var finalTokens = _tokenEncoder.CountTokens(finalContext);
+        _logger.LogDebug("Built memory context with {Tokens} tokens (limit: {MaxTokens})", finalTokens, maxTokens);
+
+        return finalContext;
+    }
+
+    /// <summary>
+    /// Truncates text to fit within a specified token limit.
+    /// </summary>
+    private string TruncateToTokenLimit(string text, int maxTokens)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+
+        var tokens = _tokenEncoder.Encode(text);
+        if (tokens.Count <= maxTokens) return text;
+
+        // Take only the tokens that fit and decode back to text
+        var truncatedTokens = tokens.Take(maxTokens).ToList();
+        return _tokenEncoder.Decode(truncatedTokens);
     }
 
     public void Stop()

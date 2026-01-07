@@ -495,6 +495,232 @@ public class AutonomousAgentTests
         Assert.Contains("### Success (1 entry):", result);
     }
 
+    [Fact]
+    public void BuildMemoryContext_RespectsTokenLimit()
+    {
+        // Arrange - Create memories with known sizes
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "First learning with a short summary",
+                Importance = 0.9,
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            },
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Second learning with another short summary",
+                Importance = 0.8,
+                Timestamp = DateTime.UtcNow.AddHours(-2)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a very small token limit
+        var result = _agent.BuildMemoryContext(maxTokens: 50);
+
+        // Assert - Should include at least one memory but respect the limit
+        Assert.Contains("### Learning", result);
+        // The result should be truncated to respect the token limit
+        Assert.True(result.Length < 500); // Should be much smaller than unrestricted
+    }
+
+    [Fact]
+    public void BuildMemoryContext_HandlesVeryLargeMemory()
+    {
+        // Arrange - Create one very large memory
+        var largeContent = new string('x', 10000); // 10k characters
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = largeContent,
+                Importance = 0.9,
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            },
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Small summary",
+                Importance = 0.8,
+                Timestamp = DateTime.UtcNow.AddHours(-2)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a reasonable token limit
+        var result = _agent.BuildMemoryContext(maxTokens: 500);
+
+        // Assert - Should truncate the large memory and not throw
+        Assert.Contains("### Learning", result);
+        Assert.DoesNotContain(largeContent, result); // Should not include full large content
+        // Should include at least a truncated version
+        Assert.Contains("...", result); // Truncation indicator
+    }
+
+    [Fact]
+    public void BuildMemoryContext_IncludesMultipleMemoriesWithinTokenBudget()
+    {
+        // Arrange - Create multiple small memories
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry { Type = MemoryType.Learning, Summary = "L1", Importance = 0.9, Timestamp = DateTime.UtcNow },
+            new MemoryEntry { Type = MemoryType.Learning, Summary = "L2", Importance = 0.8, Timestamp = DateTime.UtcNow },
+            new MemoryEntry { Type = MemoryType.Success, Summary = "S1", Importance = 0.7, Timestamp = DateTime.UtcNow },
+            new MemoryEntry { Type = MemoryType.Success, Summary = "S2", Importance = 0.6, Timestamp = DateTime.UtcNow }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a reasonable token limit
+        var result = _agent.BuildMemoryContext(maxTokens: 500);
+
+        // Assert - Should include all or most memories since they're small
+        Assert.Contains("### Learning", result);
+        Assert.Contains("### Success", result);
+        Assert.Contains("L1", result);
+        Assert.Contains("S1", result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_StopsAddingWhenTokenLimitReached()
+    {
+        // Arrange - Create many memories with medium-sized summaries
+        var memories = new List<MemoryEntry>();
+        for (int i = 1; i <= 20; i++)
+        {
+            memories.Add(new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = $"This is memory number {i} with some additional text to make it longer so we can test token limiting behavior",
+                Importance = 0.9 - (i * 0.02),
+                Timestamp = DateTime.UtcNow.AddHours(-i)
+            });
+        }
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a moderate token limit
+        var result = _agent.BuildMemoryContext(maxTokens: 300);
+
+        // Assert - Should include only first few memories (highest importance)
+        Assert.Contains("### Learning", result);
+        Assert.Contains("memory number 1", result); // Highest importance
+        Assert.Contains("memory number 2", result);
+        // But not all 20 memories
+        Assert.DoesNotContain("memory number 20", result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_TruncatesIndividualMemoryWhenTooLarge()
+    {
+        // Arrange - One memory that alone exceeds the token limit
+        var veryLongSummary = string.Concat(Enumerable.Repeat("This is a very long summary that contains a lot of information. ", 100));
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = veryLongSummary,
+                Importance = 0.9,
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a token limit smaller than the memory
+        var result = _agent.BuildMemoryContext(maxTokens: 200);
+
+        // Assert - Should include a truncated version
+        Assert.Contains("### Learning", result);
+        Assert.Contains("...", result); // Truncation indicator
+        // Should not contain the full text
+        Assert.DoesNotContain(veryLongSummary, result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_PrioritizesHighImportanceMemories()
+    {
+        // Arrange - Mix of high and low importance memories
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "High importance learning",
+                Importance = 0.95,
+                Timestamp = DateTime.UtcNow.AddHours(-5)
+            },
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Low importance learning",
+                Importance = 0.3,
+                Timestamp = DateTime.UtcNow.AddHours(-1) // More recent but less important
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a small token limit that can only fit one
+        var result = _agent.BuildMemoryContext(maxTokens: 150);
+
+        // Assert - Should prioritize high importance over recency
+        Assert.Contains("High importance learning", result);
+        // Low importance might not be included due to token limit
+    }
+
+    [Fact]
+    public void BuildMemoryContext_IncludesDetailsForHighImportanceWithinTokenBudget()
+    {
+        // Arrange
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Important learning",
+                Content = "This is the detailed content that provides more context about the learning",
+                Importance = 0.85, // Above HIGH_IMPORTANCE_THRESHOLD
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with sufficient token budget
+        var result = _agent.BuildMemoryContext(maxTokens: 500);
+
+        // Assert - Should include details since there's budget and it's high importance
+        Assert.Contains("Important learning", result);
+        Assert.Contains("Details:", result);
+        Assert.Contains("detailed content", result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_ExcludesDetailsWhenTokenBudgetTight()
+    {
+        // Arrange
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Important learning",
+                Content = new string('x', 5000), // Very large content
+                Importance = 0.85, // Above HIGH_IMPORTANCE_THRESHOLD
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with very small token budget
+        var result = _agent.BuildMemoryContext(maxTokens: 100);
+
+        // Assert - Should exclude details to stay within budget
+        Assert.Contains("Important learning", result);
+        // Details might be excluded if they don't fit
+    }
+
     #region LoadRecentMemoriesAsync Tests
 
     [Fact]

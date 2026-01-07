@@ -793,13 +793,14 @@ public class AutonomousAgent
                     if (tempContext.Length == 0)
                     {
                         // Truncate the summary to fit within budget
-                        var availableTokens = maxTokens - currentTokens - groupTokens - _tokenEncoder.CountTokens($"- [{ageStr}, importance: {memory.Importance:F2}] ...\n");
+                        var ellipsisTokens = _tokenEncoder.CountTokens($"- [{ageStr}, importance: {memory.Importance:F2}] ...\n");
+                        var availableTokens = maxTokens - currentTokens - groupTokens - ellipsisTokens;
                         if (availableTokens > 20) // Minimum viable summary
                         {
                             var truncatedSummary = TruncateToTokenLimit(memory.Summary, availableTokens);
                             memoryLine = $"- [{ageStr}, importance: {memory.Importance:F2}] {truncatedSummary}...\n";
-                            tempContext.Append(memoryLine);
                             groupTokens += _tokenEncoder.CountTokens(memoryLine);
+                            tempContext.Append(memoryLine);
                             _logger.LogDebug("Truncated memory summary to fit within token budget");
                         }
                     }
@@ -847,6 +848,7 @@ public class AutonomousAgent
         if (tokens.Count <= maxTokens) return text;
 
         // Take only the tokens that fit and decode back to text
+        // Note: ToList() is required as Decode expects IList<int>
         var truncatedTokens = tokens.Take(maxTokens).ToList();
         return _tokenEncoder.Decode(truncatedTokens);
     }

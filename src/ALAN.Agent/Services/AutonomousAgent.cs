@@ -26,7 +26,7 @@ public class AutonomousAgent
     private const int CONTENT_PREVIEW_MAX_LENGTH = 200;
 
     private readonly AIAgent _agent;
-    private readonly AgentThread _thread;
+    private AgentThread _thread;
     private readonly ILogger<AutonomousAgent> _logger;
     private readonly StateManager _stateManager;
     private readonly UsageTracker _usageTracker;
@@ -432,7 +432,7 @@ public class AutonomousAgent
 
         // Get AI response - retry with reduced context if needed
         int retryAttempt = 0;
-        const int maxRetries = 3;
+        const int maxRetries = 4;
 
         while (retryAttempt <= maxRetries)
         {
@@ -454,7 +454,7 @@ public class AutonomousAgent
                 // Success - restore full context budget for next iteration
                 if (_currentMemoryContextTokens < MAX_MEMORY_CONTEXT_TOKENS)
                 {
-                    _logger.LogInformation("Context length issue resolved. Restoring memory context to {Tokens} tokens", MAX_MEMORY_CONTEXT_TOKENS);
+                    _logger.LogInformation("************************ Context length issue resolved. Restoring memory context to {Tokens} tokens", MAX_MEMORY_CONTEXT_TOKENS);
                     _currentMemoryContextTokens = MAX_MEMORY_CONTEXT_TOKENS;
                 }
 
@@ -487,18 +487,28 @@ public class AutonomousAgent
             catch (System.ClientModel.ClientResultException clientEx) when (clientEx.Status == 400 && clientEx.Message.Contains("context_length_exceeded"))
             {
                 retryAttempt++;
+                if (retryAttempt == 1)
+                {
+                    // first try with an empty thread
+                    _thread = _agent.GetNewThread();
+
+                    _logger.LogWarning("************************ Context length exceeded ({CurrentTokens} tokens). Retrying with a fresh thread (attempt {Attempt}/{MaxRetries})",
+                        _currentMemoryContextTokens, retryAttempt, maxRetries);
+                    continue;
+                }
+
 
                 if (_currentMemoryContextTokens > MIN_MEMORY_CONTEXT_TOKENS && retryAttempt <= maxRetries)
                 {
                     // Reduce memory context token budget by half
                     var newTokens = Math.Max(MIN_MEMORY_CONTEXT_TOKENS, _currentMemoryContextTokens / 2);
-                    _logger.LogWarning("Context length exceeded ({CurrentTokens} tokens). Reducing to {NewTokens} tokens and retrying (attempt {Attempt}/{MaxRetries})",
+                    _logger.LogWarning("************************ Context length exceeded ({CurrentTokens} tokens). Reducing to {NewTokens} tokens and retrying (attempt {Attempt}/{MaxRetries})",
                         _currentMemoryContextTokens, newTokens, retryAttempt, maxRetries);
                     _currentMemoryContextTokens = newTokens;
                     continue; // Retry with reduced context
                 }
 
-                _logger.LogError(clientEx, "Context length exceeded even with minimal memory context ({Tokens} tokens). Status: {Status}",
+                _logger.LogError(clientEx, "************************ Context length exceeded even with minimal memory context ({Tokens} tokens). Status: {Status}",
                     _currentMemoryContextTokens, clientEx.Status);
 
                 break; // Cannot retry further
@@ -554,22 +564,72 @@ public class AutonomousAgent
                     };
 
                     _stateManager.AddAction(action);
+                    AgentRunResponse? result = null;
                     try
                     {
                         _stateManager.UpdateGoal(actionPlan.Goal ?? "General exploration");
 
-                        var prompt = _promptService.RenderTemplate("action-execution", new
-                        {
-                            goal = actionPlan.Goal ?? "General exploration",
-                            reasoning = singlePlan.Reasoning,
-                            action = actionPlan.Action,
-                            extra = actionPlan.Extra
-                        });
-                        // Simulate action execution
-                        var result = await _resiliencePipeline.ExecuteAsync(async ct =>
-                            await _agent.RunAsync(prompt, _thread, cancellationToken: ct),
-                            cancellationToken);
+                        // Get AI response - retry with reduced context if needed
+                        int retryAttempt = 0;
+                        const int maxRetries = 3;
+                        var currentContextTokens = MAX_MEMORY_CONTEXT_TOKENS;
 
+                        while (retryAttempt <= maxRetries)
+                        {
+                            try
+                            {
+                                var reasoning = singlePlan.Reasoning;
+                                var extra = actionPlan.Extra;
+                                if (retryAttempt > 0)
+                                {
+                                    _logger.LogInformation("Retrying action execution with reduced context ({Attempt}/{MaxRetries})",
+                                        retryAttempt, maxRetries);
+                                    extra = TruncateToTokenLimit(
+                                            actionPlan.Extra ?? string.Empty,
+                                            currentContextTokens / 2);
+                                    reasoning = TruncateToTokenLimit(
+                                            singlePlan.Reasoning ?? string.Empty,
+                                            currentContextTokens / 2);
+
+                                }
+                                var prompt = _promptService.RenderTemplate("action-execution", new
+                                {
+                                    goal = actionPlan.Goal ?? "General exploration",
+                                    reasoning = reasoning,
+                                    action = actionPlan.Action,
+                                    extra = extra
+                                });
+
+                                result = await _resiliencePipeline.ExecuteAsync(async ct =>
+                                   await _agent.RunAsync(prompt, _thread, cancellationToken: ct),
+                                   cancellationToken);
+                                break; // Success - exit retry loop
+                            }
+                            catch (System.ClientModel.ClientResultException clientEx) when (clientEx.Status == 400 && clientEx.Message.Contains("context_length_exceeded"))
+                            {
+                                retryAttempt++;
+
+                                if (_currentMemoryContextTokens > MIN_MEMORY_CONTEXT_TOKENS && retryAttempt <= maxRetries)
+                                {
+                                    // Reduce memory context token budget by half
+                                    var newTokens = Math.Max(MIN_MEMORY_CONTEXT_TOKENS, _currentMemoryContextTokens / 2);
+                                    _logger.LogWarning("************************ Context length exceeded ({CurrentTokens} tokens). Reducing to {NewTokens} tokens and retrying (attempt {Attempt}/{MaxRetries})",
+                                        _currentMemoryContextTokens, newTokens, retryAttempt, maxRetries);
+                                    _currentMemoryContextTokens = newTokens;
+                                    continue; // Retry with reduced context
+                                }
+
+                                _logger.LogError(clientEx, "************************ Context length exceeded even with minimal memory context ({Tokens} tokens). Status: {Status}",
+                                    _currentMemoryContextTokens, clientEx.Status);
+
+                                throw;
+                            }
+                        }
+
+                        if (result == null)
+                        {
+                            throw new Exception("Failed to get a response from the agent for action execution.");
+                        }
                         // Extract tool calls from action execution
                         var toolCalls = ExtractToolCalls(result);
                         if (toolCalls != null && toolCalls.Count > 0)
@@ -772,8 +832,8 @@ public class AutonomousAgent
                 // Check if we can include full content for high-importance items
                 string? detailsLine = null;
                 int detailsTokens = 0;
-                if (memory.Importance >= HIGH_IMPORTANCE_THRESHOLD && 
-                    !string.IsNullOrEmpty(memory.Content) && 
+                if (memory.Importance >= HIGH_IMPORTANCE_THRESHOLD &&
+                    !string.IsNullOrEmpty(memory.Content) &&
                     memory.Content != memory.Summary)
                 {
                     var contentPreview = memory.Content.Length > CONTENT_PREVIEW_MAX_LENGTH

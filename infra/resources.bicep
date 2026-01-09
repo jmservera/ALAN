@@ -379,7 +379,7 @@ module privateDnsZoneSearch 'br/public:avm/res/network/private-dns-zone:0.6.0' =
 }
 
 // Azure OpenAI with private endpoint
-module openai 'br/public:avm/res/cognitive-services/account:0.9.1' = {
+module openai 'br/public:avm/res/cognitive-services/account:0.14.1' = {
   name: 'openai-${environmentName}'
   params: {
     name: openAiAccountName
@@ -389,6 +389,7 @@ module openai 'br/public:avm/res/cognitive-services/account:0.9.1' = {
     sku: 'S0'
     customSubDomainName: openAiAccountName
     publicNetworkAccess: 'Disabled'
+    restore: true // Do not fail if the account was not purged
     networkAcls: {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
@@ -406,6 +407,7 @@ module openai 'br/public:avm/res/cognitive-services/account:0.9.1' = {
           name: openAiModelName
           version: openAiModelVersion
         }
+        raiPolicyName: 'Microsoft.Default' // DefaultV2 is too restricitive for some scenarios
       }
       {
         name: openAiEmbeddingDeploymentName

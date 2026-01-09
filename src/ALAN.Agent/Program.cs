@@ -215,15 +215,26 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     var promptService = sp.GetRequiredService<IPromptService>();
     var instructions = promptService.RenderTemplate("agent-instructions", new { projectUrl });
 
+#pragma warning disable MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+    ChatClientAgentOptions chatClientAgentOptions = new()
+    {
+        Name = "ALAN-Agent",
+        ChatOptions = new ChatOptions()
+        {
+            Instructions = instructions,
+            Tools = tools,
+        },
+        ChatMessageStoreFactory = ctx => new InMemoryChatMessageStore(
+            new MessageCountingChatReducer(8),
+            ctx.SerializedState,
+            ctx.JsonSerializerOptions,
+            InMemoryChatMessageStore.ChatReducerTriggerEvent.AfterMessageAdded),
+    };
+#pragma warning restore MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+
     var agent = azureClient.GetChatClient(deploymentName)
-                            .CreateAIAgent(
-                                instructions: instructions,
-                                tools: tools,
-                                name: "ALAN-Agent");
-
+                            .CreateAIAgent(chatClientAgentOptions);
     return agent;
-
-
 });
 
 // Register the autonomous agent as a hosted service

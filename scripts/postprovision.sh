@@ -2,9 +2,11 @@
 set -e
 
 # Post-provision script for ALAN
-# This script enables local development access to Azure OpenAI by:
+# This script enables local development access to Azure resources by:
 # 1. Adding current user's IP to OpenAI network rules
-# 2. Assigning Cognitive Services OpenAI User role to current user
+# 2. Adding current user's IP to Container Registry network rules
+# 3. Assigning Cognitive Services OpenAI User role to current user
+# 4. Assigning AcrPush role to current user for Container Registry
 #
 # This script only runs locally (when CI environment variable is not set)
 # to ensure production deployments remain fully secured via private endpoints.
@@ -23,6 +25,7 @@ echo "Local development environment detected - configuring OpenAI access"
 # Get required values from azd environment
 RESOURCE_GROUP=$(azd env get-value AZURE_RESOURCE_GROUP 2>/dev/null || echo "")
 OPENAI_NAME=$(azd env get-value AZURE_OPENAI_NAME 2>/dev/null || echo "")
+ACR_NAME=$(azd env get-value AZURE_CONTAINER_REGISTRY_NAME 2>/dev/null || echo "")
 PRINCIPAL_ID=$(azd env get-value AZURE_PRINCIPAL_ID 2>/dev/null || echo "")
 
 if [ -z "$RESOURCE_GROUP" ]; then
@@ -35,8 +38,14 @@ if [ -z "$OPENAI_NAME" ]; then
   exit 1
 fi
 
+if [ -z "$ACR_NAME" ]; then
+  echo "Error: Could not find AZURE_CONTAINER_REGISTRY_NAME in environment"
+  exit 1
+fi
+
 echo "Resource Group: $RESOURCE_GROUP"
 echo "OpenAI Account: $OPENAI_NAME"
+echo "Container Registry: $ACR_NAME"
 
 # Get current user's public IP address
 echo ""
@@ -97,6 +106,41 @@ else
   fi
 fi
 
+# Configure Container Registry access
+if [ -n "$USER_IP" ]; then
+  echo ""
+  echo "=== Configuring Container Registry Access ==="
+  
+  # Get ACR resource ID
+  echo "Retrieving Container Registry information..."
+  ACR_RESOURCE_ID=$(az acr show \
+    --name "$ACR_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query id -o tsv)
+  
+  # Check if IP is already in network rules
+  echo "Checking Container Registry network rules..."
+  EXISTING_ACR_IP=$(az acr network-rule list \
+    --name "$ACR_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query "ipRules[?ipAddressOrRange=='${USER_IP}/32'].ipAddressOrRange" -o tsv 2>/dev/null || echo "")
+  
+  if [ -n "$EXISTING_ACR_IP" ]; then
+    echo "✓ IP $USER_IP already configured in ACR network rules"
+  else
+    # Add current IP to ACR network rules
+    echo "Adding current IP to Container Registry network rules..."
+    if az acr network-rule add \
+      --name "$ACR_NAME" \
+      --ip-address "$USER_IP" \
+      > /dev/null 2>&1; then
+      echo "✓ Container Registry network access configured for IP: $USER_IP"
+    else
+      echo "Warning: Could not add IP to ACR network rules (may already exist or insufficient permissions)"
+    fi
+  fi
+fi
+
 # Assign Cognitive Services OpenAI User role to current user (if not already assigned)
 if [ -n "$PRINCIPAL_ID" ]; then
   echo ""
@@ -128,6 +172,36 @@ if [ -n "$PRINCIPAL_ID" ]; then
     
     echo "✓ Role assigned successfully"
   fi
+  
+  # Assign AcrPush role to current user for Container Registry
+  echo ""
+  echo "Assigning AcrPush role to current user for Container Registry..."
+  
+  # Get the ACR resource ID
+  ACR_RESOURCE_ID=$(az acr show \
+    --name "$ACR_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --query id -o tsv)
+  
+  # Check if role assignment already exists
+  EXISTING_ACR_ASSIGNMENT=$(az role assignment list \
+    --assignee "$PRINCIPAL_ID" \
+    --scope "$ACR_RESOURCE_ID" \
+    --role "AcrPush" \
+    --query "[0].id" -o tsv 2>/dev/null || echo "")
+  
+  if [ -n "$EXISTING_ACR_ASSIGNMENT" ]; then
+    echo "✓ AcrPush role already assigned to user"
+  else
+    # Assign the role
+    az role assignment create \
+      --assignee "$PRINCIPAL_ID" \
+      --role "AcrPush" \
+      --scope "$ACR_RESOURCE_ID" \
+      > /dev/null 2>&1
+    
+    echo "✓ AcrPush role assigned successfully"
+  fi
 else
   echo ""
   echo "Warning: AZURE_PRINCIPAL_ID not found - skipping role assignment"
@@ -138,11 +212,17 @@ echo "=== Post-provision configuration complete ==="
 echo ""
 echo "Development access enabled for:"
 if [ -n "$USER_IP" ]; then
-  echo "  - IP Address: $USER_IP"
+  echo "  - IP Address: $USER_IP (OpenAI + Container Registry)"
 fi
 if [ -n "$PRINCIPAL_ID" ]; then
   echo "  - User Principal: $PRINCIPAL_ID"
+  echo "  - Roles: Cognitive Services OpenAI User, AcrPush"
 fi
+echo ""
+echo "You can now push images to ACR using:"
+echo "  az acr login --name $ACR_NAME"
+echo "  docker tag <image> ${ACR_NAME}.azurecr.io/<image>"
+echo "  docker push ${ACR_NAME}.azurecr.io/<image>"
 echo ""
 echo "Note: These settings are for local development only."
 echo "Production deployments will use private endpoints and managed identity."

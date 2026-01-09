@@ -16,11 +16,12 @@ public class StatePublisher
 
     public StatePublisher(ILogger<StatePublisher> logger, IConfiguration configuration)
     {
+        // TODO: publish current state to a table or message queue, we should not depend on the webservice here
         _logger = logger;
-        _webServiceUrl = configuration["WebService:Url"] 
-            ?? Environment.GetEnvironmentVariable("WEB_SERVICE_URL") 
+        _webServiceUrl = configuration["WebService:Url"]
+            ?? Environment.GetEnvironmentVariable("WEB_SERVICE_URL")
             ?? "http://localhost:5000";
-        
+
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri(_webServiceUrl),
@@ -39,7 +40,7 @@ public class StatePublisher
         {
             var response = await _httpClient.PostAsJsonAsync("/api/state", state, cancellationToken);
             response.EnsureSuccessStatusCode();
-            
+
             if (!_isConnected)
             {
                 _isConnected = true;
@@ -69,7 +70,7 @@ public class StatePublisher
         {
             var response = await _httpClient.PostAsJsonAsync("/api/thought", thought, cancellationToken);
             response.EnsureSuccessStatusCode();
-            
+
             if (!_isConnected)
             {
                 _isConnected = true;
@@ -95,7 +96,7 @@ public class StatePublisher
         {
             var response = await _httpClient.PostAsJsonAsync("/api/action", action, cancellationToken);
             response.EnsureSuccessStatusCode();
-            
+
             if (!_isConnected)
             {
                 _isConnected = true;
@@ -135,7 +136,7 @@ public class StatePublisher
         else if (_lastConnectionAttempt == DateTime.UtcNow)
         {
             // Only log on first attempt and subsequent retry attempts
-            _logger.LogDebug("Web service at {Url} is not reachable. Will retry every {Minutes} minute(s)", 
+            _logger.LogDebug("Web service at {Url} is not reachable. Will retry every {Minutes} minute(s)",
                 _webServiceUrl, _reconnectInterval.TotalMinutes);
         }
     }

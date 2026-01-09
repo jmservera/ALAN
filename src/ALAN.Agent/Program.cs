@@ -13,6 +13,7 @@ using Azure.AI.OpenAI;
 using Azure;
 using OpenAI;
 using Azure.Identity;
+using ALAN.Agent.Plugins;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -55,6 +56,84 @@ builder.Services.AddSingleton<IMessageQueue<HumanInput>>(sp =>
         "human-inputs",
         sp.GetRequiredService<ILogger<AzureStorageQueueService<HumanInput>>>()));
 
+// Try to get Azure OpenAI configuration
+var endpoint = builder.Configuration["AzureOpenAI:Endpoint"]
+    ?? builder.Configuration["AZURE_OPENAI_ENDPOINT"]
+    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
+
+var apiKey = builder.Configuration["AzureOpenAI:ApiKey"]
+    ?? builder.Configuration["AZURE_OPENAI_API_KEY"]
+    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
+
+var deploymentName = builder.Configuration["AzureOpenAI:DeploymentName"]
+    ?? builder.Configuration["AZURE_OPENAI_DEPLOYMENT_NAME"]
+    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT")
+    ?? "gpt-4o-mini";
+
+if (string.IsNullOrEmpty(endpoint))
+{
+    Console.WriteLine("Warning: No Azure OpenAI configuration found. Using simulated AI responses.");
+    Console.WriteLine($"Endpoint: {endpoint}");
+    Console.WriteLine($"ApiKey: {(string.IsNullOrEmpty(apiKey) ? "not set" : "***")}");
+    throw new InvalidOperationException("Azure OpenAI endpoint is required. Set AZURE_OPENAI_ENDPOINT environment variable or AzureOpenAI:Endpoint in appsettings.json");
+}
+
+// Register vector memory service if configured
+// Priority: Qdrant (local dev) > Azure AI Search (production)
+var qdrantEndpoint = builder.Configuration["Qdrant:Endpoint"]
+    ?? builder.Configuration["QDRANT_ENDPOINT"]
+    ?? Environment.GetEnvironmentVariable("QDRANT_ENDPOINT");
+
+var searchEndpoint = builder.Configuration["AzureAISearch:Endpoint"]
+    ?? Environment.GetEnvironmentVariable("AZURE_AI_SEARCH_ENDPOINT");
+
+var embeddingDeployment = builder.Configuration["AzureOpenAI:EmbeddingDeployment"]
+    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+    ?? "text-embedding-ada-002";
+
+if (!string.IsNullOrEmpty(qdrantEndpoint))
+{
+    var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Qdrant configured at {Endpoint}, enabling local vector memory", qdrantEndpoint);
+
+    builder.Services.AddSingleton<IVectorMemoryService>(sp =>
+    {
+        return new QdrantMemoryService(
+            qdrantEndpoint,
+            endpoint,
+            embeddingDeployment,
+            sp.GetRequiredService<ILogger<QdrantMemoryService>>(),
+            apiKey);
+    });
+
+    // Register MemoryAgent (depends on AIAgent being registered later)
+    builder.Services.AddSingleton<MemoryAgent>();
+}
+else if (!string.IsNullOrEmpty(searchEndpoint))
+{
+    var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+    logger.LogInformation("Azure AI Search configured, enabling vector memory");
+
+    builder.Services.AddSingleton<IVectorMemoryService>(sp =>
+    {
+        return new AzureAISearchMemoryService(
+            searchEndpoint,
+            endpoint,
+            embeddingDeployment,
+            sp.GetRequiredService<ILogger<AzureAISearchMemoryService>>());
+    });
+
+    // Register MemoryAgent (depends on AIAgent being registered later)
+    builder.Services.AddSingleton<MemoryAgent>();
+}
+else
+{
+    var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+    logger.LogWarning("No vector memory configured. To enable:");
+    logger.LogInformation("  - Local dev: Set QDRANT_ENDPOINT=http://localhost:6333");
+    logger.LogInformation("  - Production: Set AZURE_AI_SEARCH_ENDPOINT");
+}
+
 // Register consolidation service (requires AIAgent, so it's registered after)
 builder.Services.AddSingleton<IMemoryConsolidationService, MemoryConsolidationService>();
 builder.Services.AddSingleton<BatchLearningService>();
@@ -78,27 +157,6 @@ builder.Services.AddSingleton(sp =>
         maxLoopsPerDay,
         maxTokensPerDay));
 
-// Try to get Azure OpenAI configuration
-var endpoint = builder.Configuration["AzureOpenAI:Endpoint"]
-    ?? builder.Configuration["AZURE_OPENAI_ENDPOINT"]
-    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT");
-
-var apiKey = builder.Configuration["AzureOpenAI:ApiKey"]
-    ?? builder.Configuration["AZURE_OPENAI_API_KEY"]
-    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
-
-var deploymentName = builder.Configuration["AzureOpenAI:DeploymentName"]
-    ?? builder.Configuration["AZURE_OPENAI_DEPLOYMENT_NAME"]
-    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT")
-    ?? "gpt-4o-mini";
-
-if (string.IsNullOrEmpty(endpoint))
-{
-    Console.WriteLine("Warning: No Azure OpenAI configuration found. Using simulated AI responses.");
-    Console.WriteLine($"Endpoint: {endpoint}");
-    Console.WriteLine($"ApiKey: {(string.IsNullOrEmpty(apiKey) ? "not set" : "***")}");
-    throw new InvalidOperationException("Azure OpenAI endpoint is required. Set AZURE_OPENAI_ENDPOINT environment variable or AzureOpenAI:Endpoint in appsettings.json");
-}
 AzureOpenAIClient azureClient;
 azureClient = !string.IsNullOrEmpty(apiKey)
     ? new AzureOpenAIClient(new Uri(endpoint), new AzureKeyCredential(apiKey))
@@ -114,8 +172,12 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     //                 // Load and configure MCP servers from YAML
     var mcpConfigPath = Path.Combine(AppContext.BaseDirectory, "mcp-config.yaml");
     var mcpService = sp.GetRequiredService<McpConfigurationService>();
+
     var tools = mcpService.ConfigureMcpTools(mcpConfigPath).GetAwaiter().GetResult();
 
+    var utilityTools = UtilityPlugin.AsTools();
+    tools ??= [];
+    tools.AddRange(utilityTools);
 
     AzureOpenAIClient azureClient;
     AzureOpenAIClientOptions azureOptions = new AzureOpenAIClientOptions(
@@ -129,7 +191,6 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     {
         azureClient = new AzureOpenAIClient(new Uri(endpoint), new DefaultAzureCredential(), azureOptions);
     }
-
 
     var logger = sp.GetRequiredService<ILogger<Program>>();
     logger.LogInformation("Creating AI agent with {ToolCount} tools", tools?.Count ?? 0);
@@ -154,14 +215,26 @@ builder.Services.AddSingleton<AIAgent>(sp =>
     var promptService = sp.GetRequiredService<IPromptService>();
     var instructions = promptService.RenderTemplate("agent-instructions", new { projectUrl });
 
+#pragma warning disable MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+    ChatClientAgentOptions chatClientAgentOptions = new()
+    {
+        Name = "ALAN-Agent",
+        ChatOptions = new ChatOptions()
+        {
+            Instructions = instructions,
+            Tools = tools,
+        },
+        ChatMessageStoreFactory = ctx => new InMemoryChatMessageStore(
+            new MessageCountingChatReducer(8),
+            ctx.SerializedState,
+            ctx.JsonSerializerOptions,
+            InMemoryChatMessageStore.ChatReducerTriggerEvent.AfterMessageAdded),
+    };
+#pragma warning restore MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+
     var agent = azureClient.GetChatClient(deploymentName)
-                            .CreateAIAgent(
-                                instructions: instructions,
-                                tools: tools,
-                                name: "ALAN-Agent");
+                            .CreateAIAgent(chatClientAgentOptions);
     return agent;
-
-
 });
 
 // Register the autonomous agent as a hosted service

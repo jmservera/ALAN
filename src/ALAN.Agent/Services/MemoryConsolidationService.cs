@@ -11,6 +11,7 @@ namespace ALAN.Agent.Services;
 /// <summary>
 /// Service for consolidating memories and extracting learnings.
 /// Uses AI to analyze patterns and create higher-level insights.
+/// Also stores consolidated memories in vector search when available.
 /// </summary>
 public class MemoryConsolidationService : IMemoryConsolidationService
 {
@@ -20,6 +21,7 @@ public class MemoryConsolidationService : IMemoryConsolidationService
     private readonly AIAgent _agent;
     private readonly ILogger<MemoryConsolidationService> _logger;
     private readonly IPromptService _promptService;
+    private readonly MemoryAgent? _memoryAgent; // Optional: only available when vector memory is configured
     private readonly List<ConsolidatedLearning> _learnings = [];
 
     public MemoryConsolidationService(
@@ -28,7 +30,8 @@ public class MemoryConsolidationService : IMemoryConsolidationService
         StateManager stateManager,
         AIAgent agent,
         ILogger<MemoryConsolidationService> logger,
-        IPromptService promptService)
+        IPromptService promptService,
+        MemoryAgent? memoryAgent = null) // Optional: only available when vector memory is configured
     {
         _longTermMemory = longTermMemory;
         _shortTermMemory = shortTermMemory;
@@ -36,6 +39,12 @@ public class MemoryConsolidationService : IMemoryConsolidationService
         _agent = agent;
         _logger = logger;
         _promptService = promptService;
+        _memoryAgent = memoryAgent;
+
+        if (_memoryAgent != null)
+        {
+            _logger.LogInformation("MemoryAgent available - memories will also be stored in vector database");
+        }
     }
 
     public async Task<ConsolidatedLearning> ConsolidateMemoriesAsync(List<MemoryEntry> memories, CancellationToken cancellationToken = default)
@@ -165,12 +174,19 @@ public class MemoryConsolidationService : IMemoryConsolidationService
                     Content = thought.Content,
                     Summary = $"{thought.Type}: {thought.Content.Substring(0, Math.Min(100, thought.Content.Length))}...",
                     Importance = importance,
-                    Tags = new List<string> { "consolidated", "thought", thought.Type.ToString().ToLower() },
+                    Tags = new List<string> { "long-term", "consolidated", "thought", thought.Type.ToString().ToLower() },
                     Timestamp = thought.Timestamp
                 };
 
                 await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
                 await _shortTermMemory.SetAsync($"memory:{memory.Id}", memory, TimeSpan.FromHours(24), cancellationToken);
+
+                // Also store in vector memory if available
+                if (_memoryAgent != null)
+                {
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken, "long-term");
+                }
+
                 thoughtsStored++;
             }
         }
@@ -191,12 +207,19 @@ public class MemoryConsolidationService : IMemoryConsolidationService
                     Content = $"Action: {action.Name}\nDescription: {action.Description}\nInput: {action.Input}\nOutput: {action.Output}",
                     Summary = $"{action.Name}: {action.Description}",
                     Importance = importance,
-                    Tags = new List<string> { "consolidated", "action", action.Status.ToString().ToLower(), action.Name.ToLower() },
+                    Tags = new List<string> { "long-term", "consolidated", "action", action.Status.ToString().ToLower(), action.Name.ToLower() },
                     Timestamp = action.Timestamp
                 };
 
                 await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
                 await _shortTermMemory.SetAsync($"memory:{memory.Id}", memory, TimeSpan.FromHours(24), cancellationToken);
+
+                // Also store in vector memory if available
+                if (_memoryAgent != null)
+                {
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken, "long-term");
+                }
+
                 actionsStored++;
             }
         }
@@ -279,6 +302,12 @@ public class MemoryConsolidationService : IMemoryConsolidationService
         try
         {
             await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
+
+            // Also store in vector memory if available
+            if (_memoryAgent != null)
+            {
+                await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken, "long-term");
+            }
         }
         catch (Exception ex)
         {
@@ -295,13 +324,11 @@ public class MemoryConsolidationService : IMemoryConsolidationService
         // Identify memories that are:
         // 1. Older than 30 days with low access count
         // 2. Have low importance score
-        // 3. Are errors that have been resolved
 
         var cutoffDate = DateTime.UtcNow.AddDays(-30);
         var outdatedMemories = allMemories.Where(m =>
             (m.Timestamp < cutoffDate && m.AccessCount < 3) ||
-            (m.Importance < 0.3) ||
-            (m.Type == MemoryType.Error && m.Timestamp < DateTime.UtcNow.AddDays(-7))
+            (m.Importance < 0.3)
         ).ToList();
 
         _logger.LogInformation("Identified {Count} outdated memories", outdatedMemories.Count);

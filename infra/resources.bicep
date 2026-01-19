@@ -389,7 +389,6 @@ module openai 'br/public:avm/res/cognitive-services/account:0.14.1' = {
     sku: 'S0'
     customSubDomainName: openAiAccountName
     publicNetworkAccess: 'Disabled'
-    restore: true // Do not fail if the account was not purged
     networkAcls: {
       defaultAction: 'Deny'
       bypass: 'AzureServices'

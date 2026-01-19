@@ -22,9 +22,9 @@ public class AutonomousAgentTests
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
         var mockConsolidation = new Mock<IMemoryConsolidationService>();
         var mockPromptService = new Mock<IPromptService>();
-        
+
         // Create real service instances with mocked dependencies
-        var stateManager = new StateManager(mockShortTermMemory.Object, mockLongTermMemory.Object);
+        var stateManager = new StateManager(mockShortTermMemory.Object, mockLongTermMemory.Object, Mock.Of<ILogger<StateManager>>());
         var usageTracker = new UsageTracker(Mock.Of<ILogger<UsageTracker>>(), 4000, 8000000);
         var batchLearning = new BatchLearningService(
             mockConsolidation.Object,
@@ -495,6 +495,232 @@ public class AutonomousAgentTests
         Assert.Contains("### Success (1 entry):", result);
     }
 
+    [Fact]
+    public void BuildMemoryContext_RespectsTokenLimit()
+    {
+        // Arrange - Create memories with known sizes
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "First learning with a short summary",
+                Importance = 0.9,
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            },
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Second learning with another short summary",
+                Importance = 0.8,
+                Timestamp = DateTime.UtcNow.AddHours(-2)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a very small token limit
+        var result = _agent.BuildMemoryContext(maxTokens: 50);
+
+        // Assert - Should include at least one memory but respect the limit
+        Assert.Contains("### Learning", result);
+        // The result should be truncated to respect the token limit
+        Assert.True(result.Length < 500); // Should be much smaller than unrestricted
+    }
+
+    [Fact]
+    public void BuildMemoryContext_HandlesVeryLargeMemory()
+    {
+        // Arrange - Create one very large memory
+        var largeContent = new string('x', 10000); // 10k characters
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = largeContent,
+                Importance = 0.9,
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            },
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Small summary",
+                Importance = 0.8,
+                Timestamp = DateTime.UtcNow.AddHours(-2)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a reasonable token limit
+        var result = _agent.BuildMemoryContext(maxTokens: 500);
+
+        // Assert - Should truncate the large memory and not throw
+        Assert.Contains("### Learning", result);
+        Assert.DoesNotContain(largeContent, result); // Should not include full large content
+        // Should include at least a truncated version
+        Assert.Contains("...", result); // Truncation indicator
+    }
+
+    [Fact]
+    public void BuildMemoryContext_IncludesMultipleMemoriesWithinTokenBudget()
+    {
+        // Arrange - Create multiple small memories
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry { Type = MemoryType.Learning, Summary = "L1", Importance = 0.9, Timestamp = DateTime.UtcNow },
+            new MemoryEntry { Type = MemoryType.Learning, Summary = "L2", Importance = 0.8, Timestamp = DateTime.UtcNow },
+            new MemoryEntry { Type = MemoryType.Success, Summary = "S1", Importance = 0.7, Timestamp = DateTime.UtcNow },
+            new MemoryEntry { Type = MemoryType.Success, Summary = "S2", Importance = 0.6, Timestamp = DateTime.UtcNow }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a reasonable token limit
+        var result = _agent.BuildMemoryContext(maxTokens: 500);
+
+        // Assert - Should include all or most memories since they're small
+        Assert.Contains("### Learning", result);
+        Assert.Contains("### Success", result);
+        Assert.Contains("L1", result);
+        Assert.Contains("S1", result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_StopsAddingWhenTokenLimitReached()
+    {
+        // Arrange - Create many memories with medium-sized summaries
+        var memories = new List<MemoryEntry>();
+        for (int i = 1; i <= 20; i++)
+        {
+            memories.Add(new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = $"This is memory number {i} with some additional text to make it longer so we can test token limiting behavior",
+                Importance = 0.9 - (i * 0.02),
+                Timestamp = DateTime.UtcNow.AddHours(-i)
+            });
+        }
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a moderate token limit
+        var result = _agent.BuildMemoryContext(maxTokens: 300);
+
+        // Assert - Should include only first few memories (highest importance)
+        Assert.Contains("### Learning", result);
+        Assert.Contains("memory number 1", result); // Highest importance
+        Assert.Contains("memory number 2", result);
+        // But not all 20 memories
+        Assert.DoesNotContain("memory number 20", result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_TruncatesIndividualMemoryWhenTooLarge()
+    {
+        // Arrange - One memory that alone exceeds the token limit
+        var veryLongSummary = string.Concat(Enumerable.Repeat("This is a very long summary that contains a lot of information. ", 100));
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = veryLongSummary,
+                Importance = 0.9,
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a token limit smaller than the memory
+        var result = _agent.BuildMemoryContext(maxTokens: 200);
+
+        // Assert - Should include a truncated version
+        Assert.Contains("### Learning", result);
+        Assert.Contains("...", result); // Truncation indicator
+        // Should not contain the full text
+        Assert.DoesNotContain(veryLongSummary, result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_PrioritizesHighImportanceMemories()
+    {
+        // Arrange - Mix of high and low importance memories
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "High importance learning",
+                Importance = 0.95,
+                Timestamp = DateTime.UtcNow.AddHours(-5)
+            },
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Low importance learning",
+                Importance = 0.3,
+                Timestamp = DateTime.UtcNow.AddHours(-1) // More recent but less important
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a small token limit that can only fit one
+        var result = _agent.BuildMemoryContext(maxTokens: 150);
+
+        // Assert - Should prioritize high importance over recency
+        Assert.Contains("High importance learning", result);
+        // Low importance might not be included due to token limit
+    }
+
+    [Fact]
+    public void BuildMemoryContext_IncludesDetailsForHighImportanceWithinTokenBudget()
+    {
+        // Arrange
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Important learning",
+                Content = "This is the detailed content that provides more context about the learning",
+                Importance = 0.85, // Above HIGH_IMPORTANCE_THRESHOLD
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with sufficient token budget
+        var result = _agent.BuildMemoryContext(maxTokens: 500);
+
+        // Assert - Should include details since there's budget and it's high importance
+        Assert.Contains("Important learning", result);
+        Assert.Contains("Details:", result);
+        Assert.Contains("detailed content", result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_ExcludesDetailsWhenTokenBudgetTight()
+    {
+        // Arrange
+        var memories = new List<MemoryEntry>
+        {
+            new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = "Important learning",
+                Content = new string('x', 5000), // Very large content
+                Importance = 0.85, // Above HIGH_IMPORTANCE_THRESHOLD
+                Timestamp = DateTime.UtcNow.AddHours(-1)
+            }
+        };
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with very small token budget
+        var result = _agent.BuildMemoryContext(maxTokens: 100);
+
+        // Assert - Should exclude details to stay within budget
+        Assert.Contains("Important learning", result);
+        // Details might be excluded if they don't fit
+    }
+
     #region LoadRecentMemoriesAsync Tests
 
     [Fact]
@@ -503,7 +729,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var learnings = new List<MemoryEntry>
         {
             new MemoryEntry { Type = MemoryType.Learning, Summary = "L1", Importance = 0.9, Timestamp = DateTime.UtcNow }
@@ -552,7 +778,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var now = DateTime.UtcNow;
         var memories = new List<MemoryEntry>
         {
@@ -593,7 +819,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var actions = new List<AgentAction>
         {
             new AgentAction
@@ -643,7 +869,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         mockLongTermMemory.Setup(m => m.GetMemoriesByTypeAsync(It.IsAny<MemoryType>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Storage failure"));
 
@@ -663,7 +889,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         // Create more than MAX_MEMORY_CONTEXT_SIZE (20) memories
         var manyMemories = Enumerable.Range(1, 30).Select(i => new MemoryEntry
         {
@@ -700,7 +926,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var longTermMemories = new List<MemoryEntry>
         {
             new MemoryEntry { Type = MemoryType.Learning, Summary = "LongTerm1", Importance = 0.9, Timestamp = DateTime.UtcNow.AddHours(-5) }
@@ -747,7 +973,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         var completedAction = new AgentAction { Status = ActionStatus.Completed, Output = "Completed", Timestamp = DateTime.UtcNow };
         var runningAction = new AgentAction { Status = ActionStatus.Running, Output = "Running", Timestamp = DateTime.UtcNow };
         var failedAction = new AgentAction { Status = ActionStatus.Failed, Output = "Failed", Timestamp = DateTime.UtcNow };
@@ -789,7 +1015,7 @@ public class AutonomousAgentTests
         // Arrange
         var mockLongTermMemory = new Mock<ILongTermMemoryService>();
         var mockShortTermMemory = new Mock<IShortTermMemoryService>();
-        
+
         // Create 10 completed actions
         var action1 = new AgentAction { Name = "Action1", Output = "Output1", Status = ActionStatus.Completed, Timestamp = DateTime.UtcNow.AddMinutes(-1) };
         var action2 = new AgentAction { Name = "Action2", Output = "Output2", Status = ActionStatus.Completed, Timestamp = DateTime.UtcNow.AddMinutes(-2) };
@@ -834,13 +1060,102 @@ public class AutonomousAgentTests
         Assert.All(memories, m => Assert.Equal(MemoryType.Success, m.Type));
     }
 
+    [Fact]
+    public void BuildMemoryContext_PreventsInfiniteLoopWithSingleLargeMemory()
+    {
+        // Arrange - Simulate the scenario that would cause an infinite loop in the old implementation:
+        // A single memory that is larger than the minimum context size
+        var veryLargeMemory = new MemoryEntry
+        {
+            Type = MemoryType.Learning,
+            Summary = string.Concat(Enumerable.Repeat("This is a very long summary that contains extensive information. ", 500)), // ~30k chars
+            Content = string.Concat(Enumerable.Repeat("Even more extensive content. ", 1000)), // ~30k chars
+            Importance = 0.95,
+            Timestamp = DateTime.UtcNow
+        };
+        _agent.SetRecentMemoriesForTesting([veryLargeMemory]);
+
+        // Act - Request with minimal token budget (simulating the retry scenario)
+        // In the old implementation, this would keep halving the message count but never get below 1 message
+        // Leading to an infinite loop if that 1 message is too large
+        // Using 500 tokens which matches MIN_MEMORY_CONTEXT_TOKENS in AutonomousAgent
+        var result = _agent.BuildMemoryContext(maxTokens: 500);
+
+        // Assert - Should NOT throw an exception or hang
+        // Should return a truncated version that fits within the token budget
+        Assert.NotNull(result);
+        Assert.NotEmpty(result);
+        Assert.Contains("### Learning", result);
+        // The summary should be truncated with ellipsis
+        Assert.Contains("...", result);
+        // Should not contain the full large content
+        Assert.DoesNotContain(veryLargeMemory.Summary, result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_GracefullyHandlesMultipleLargeMemories()
+    {
+        // Arrange - Multiple large memories that together exceed any reasonable limit
+        var largeMemories = new List<MemoryEntry>();
+        for (int i = 1; i <= 5; i++)
+        {
+            largeMemories.Add(new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = string.Concat(Enumerable.Repeat($"Large memory {i} with extensive details. ", 200)), // ~6k chars each
+                Importance = 1.0 - (i * 0.1),
+                Timestamp = DateTime.UtcNow.AddHours(-i)
+            });
+        }
+        _agent.SetRecentMemoriesForTesting(largeMemories);
+
+        // Act - Request with moderate token budget
+        var result = _agent.BuildMemoryContext(maxTokens: 1000);
+
+        // Assert - Should include what fits and stop gracefully
+        Assert.NotNull(result);
+        Assert.Contains("### Learning", result);
+        // Should include at least the first (highest importance) memory
+        Assert.Contains("Large memory 1", result);
+        // Should not include all 5 memories since they're too large
+        Assert.DoesNotContain("Large memory 5", result);
+    }
+
+    [Fact]
+    public void BuildMemoryContext_TokenLimitMoreRestrictiveThanMessageLimit()
+    {
+        // Arrange - Create exactly MAX_MEMORY_CONTEXT_SIZE (20) memories with medium-large summaries
+        var memories = new List<MemoryEntry>();
+        for (int i = 1; i <= 20; i++)
+        {
+            memories.Add(new MemoryEntry
+            {
+                Type = MemoryType.Learning,
+                Summary = string.Concat(Enumerable.Repeat($"Memory {i} has substantial content. ", 50)), // ~1.5k chars each
+                Importance = 1.0 - (i * 0.03),
+                Timestamp = DateTime.UtcNow.AddHours(-i)
+            });
+        }
+        _agent.SetRecentMemoriesForTesting(memories);
+
+        // Act - Request with a token budget that can't fit all 20 memories
+        var result = _agent.BuildMemoryContext(maxTokens: 2000);
+
+        // Assert - Token limit should be more restrictive than message count limit
+        // Old implementation would include all 20, new implementation should include fewer
+        Assert.NotNull(result);
+        Assert.Contains("Memory 1", result); // Highest importance
+        // Should NOT include all 20 memories
+        Assert.DoesNotContain("Memory 20", result);
+    }
+
     private AutonomousAgent CreateTestAgent(ILongTermMemoryService longTermMemory, IShortTermMemoryService shortTermMemory)
     {
         var mockAIAgent = new Mock<AIAgent>();
         var mockLogger = new Mock<ILogger<AutonomousAgent>>();
         var mockConsolidation = new Mock<IMemoryConsolidationService>();
-        
-        var stateManager = new StateManager(shortTermMemory, longTermMemory);
+
+        var stateManager = new StateManager(shortTermMemory, longTermMemory, Mock.Of<ILogger<StateManager>>());
         var usageTracker = new UsageTracker(Mock.Of<ILogger<UsageTracker>>(), 4000, 8000000);
         var batchLearning = new BatchLearningService(
             mockConsolidation.Object,

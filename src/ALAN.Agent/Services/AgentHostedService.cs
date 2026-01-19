@@ -21,6 +21,8 @@ public class AgentHostedService : BackgroundService
     private readonly HumanInputHandler _humanInputHandler;
     private readonly IMemoryConsolidationService _memoryConsolidation;
     private readonly IPromptService _promptService;
+    private readonly MemoryAgent? _memoryAgent; // Optional: only available when vector memory is configured
+    private readonly IVectorMemoryService? _vectorMemory; // Optional: for initialization
     private AutonomousAgent? _agent;
 
     public AgentHostedService(
@@ -34,7 +36,9 @@ public class AgentHostedService : BackgroundService
         BatchLearningService batchLearningService,
         HumanInputHandler humanInputHandler,
         IMemoryConsolidationService memoryConsolidation,
-        IPromptService promptService)
+        IPromptService promptService,
+        MemoryAgent? memoryAgent = null, // Optional: only available when vector memory is configured
+        IVectorMemoryService? vectorMemory = null) // Optional: for initialization
     {
         _logger = logger;
         _loggerFactory = loggerFactory;
@@ -47,11 +51,28 @@ public class AgentHostedService : BackgroundService
         _humanInputHandler = humanInputHandler;
         _memoryConsolidation = memoryConsolidation;
         _promptService = promptService;
+        _memoryAgent = memoryAgent;
+        _vectorMemory = vectorMemory;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("Agent Hosted Service starting...");
+
+        // Initialize vector memory if available (using Qdrant gRPC on port 6334)
+        if (_vectorMemory != null)
+        {
+            _logger.LogInformation("Initializing vector memory service...");
+            try
+            {
+                await _vectorMemory.InitializeAsync(stoppingToken);
+                _logger.LogInformation("Vector memory service initialized successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to initialize vector memory service - continuing without vector search");
+            }
+        }
 
         _agent = new AutonomousAgent(
             _aiAgent,
@@ -62,7 +83,8 @@ public class AgentHostedService : BackgroundService
             _shortTermMemory,
             _batchLearningService,
             _humanInputHandler,
-            _promptService);
+            _promptService,
+            _memoryAgent); // Pass MemoryAgent for vector search capabilities
 
         // Start memory consolidation background task
         var consolidationTask = RunMemoryConsolidationAsync(stoppingToken);

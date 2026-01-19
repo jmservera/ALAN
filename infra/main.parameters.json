@@ -29,6 +29,15 @@
     "openAiModelCapacity": {
       "value": "${AZURE_OPENAI_MODEL_CAPACITY=100}"
     },
+    "searchServiceSku": {
+      "value": "${AZURE_SEARCH_SKU=basic}"
+    },
+    "searchServiceReplicaCount": {
+      "value": "${AZURE_SEARCH_REPLICA_COUNT=1}"
+    },
+    "searchServicePartitionCount": {
+      "value": "${AZURE_SEARCH_PARTITION_COUNT=1}"
+    },
     "agentMaxLoopsPerDay": {
       "value": "${AGENT_MAX_LOOPS_PER_DAY=4000}"
     },

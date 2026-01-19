@@ -1,5 +1,6 @@
 using ALAN.Shared.Models;
 using ALAN.Shared.Services.Memory;
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
 namespace ALAN.Agent.Services;
@@ -13,13 +14,26 @@ public class StateManager
     private readonly object _lock = new();
     private readonly IShortTermMemoryService _shortTermMemory;
     private readonly ILongTermMemoryService _longTermMemory;
+    private readonly MemoryAgent? _memoryAgent;
+    private readonly ILogger<StateManager> _logger;
 
     public event EventHandler<AgentState>? StateChanged;
 
-    public StateManager(IShortTermMemoryService shortTermMemory, ILongTermMemoryService longTermMemory)
+    public StateManager(
+        IShortTermMemoryService shortTermMemory,
+        ILongTermMemoryService longTermMemory,
+        ILogger<StateManager> logger,
+        MemoryAgent? memoryAgent = null)
     {
         _shortTermMemory = shortTermMemory;
         _longTermMemory = longTermMemory;
+        _logger = logger;
+        _memoryAgent = memoryAgent;
+
+        if (_memoryAgent != null)
+        {
+            _logger.LogInformation("MemoryAgent available - short-term memories will be immediately searchable via vector search");
+        }
     }
 
     public void AddThought(AgentThought thought)
@@ -37,6 +51,40 @@ public class StateManager
         // Store thought in short-term memory only
         // Memory consolidation service will promote important thoughts to long-term
         _ = _shortTermMemory.SetAsync($"thought:{thought.Id}", thought, TimeSpan.FromHours(8));
+
+        // Also store in vector memory for immediate semantic search
+        if (_memoryAgent != null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var memory = new MemoryEntry
+                    {
+                        Id = thought.Id,
+                        Type = thought.Type switch
+                        {
+                            ThoughtType.Observation => MemoryType.Observation,
+                            ThoughtType.Reasoning => MemoryType.Decision,
+                            ThoughtType.Reflection => MemoryType.Reflection,
+                            _ => MemoryType.Observation
+                        },
+                        Content = thought.Content,
+                        Summary = $"{thought.Type}: {thought.Content.Substring(0, Math.Min(100, thought.Content.Length))}...",
+                        Importance = CalculateThoughtImportance(thought),
+                        Tags = new List<string> { "short-term", "thought", thought.Type.ToString().ToLower() },
+                        Timestamp = thought.Timestamp
+                    };
+
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, default, "short-term");
+                    _logger.LogTrace("Thought {Id} stored in vector search", thought.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to store thought {Id} in vector search", thought.Id);
+                }
+            });
+        }
     }
 
     public void AddAction(AgentAction action)
@@ -58,6 +106,34 @@ public class StateManager
         // Store action in short-term memory only
         // Memory consolidation service will promote important actions to long-term
         _ = _shortTermMemory.SetAsync($"action:{action.Id}", action, TimeSpan.FromHours(8));
+
+        // Also store in vector memory for immediate semantic search
+        if (_memoryAgent != null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var memory = new MemoryEntry
+                    {
+                        Id = action.Id,
+                        Type = action.Status == ActionStatus.Completed ? MemoryType.Success : MemoryType.Decision,
+                        Content = $"Action: {action.Name}\nDescription: {action.Description}\nInput: {action.Input}\nOutput: {action.Output}",
+                        Summary = $"{action.Name}: {action.Description}",
+                        Importance = CalculateActionImportance(action),
+                        Tags = new List<string> { "short-term", "action", action.Status.ToString().ToLower(), action.Name.ToLower() },
+                        Timestamp = action.Timestamp
+                    };
+
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, default, "short-term");
+                    _logger.LogTrace("Action {Id} stored in vector search", action.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to store action {Id} in vector search", action.Id);
+                }
+            });
+        }
     }
 
     public void UpdateAction(AgentAction action)
@@ -67,6 +143,34 @@ public class StateManager
 
         // Update action in short-term memory only
         _ = _shortTermMemory.SetAsync($"action:{action.Id}", action, TimeSpan.FromHours(8));
+
+        // Also update in vector memory for immediate semantic search
+        if (_memoryAgent != null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var memory = new MemoryEntry
+                    {
+                        Id = action.Id,
+                        Type = action.Status == ActionStatus.Completed ? MemoryType.Success : MemoryType.Decision,
+                        Content = $"Action: {action.Name}\nDescription: {action.Description}\nInput: {action.Input}\nOutput: {action.Output}",
+                        Summary = $"{action.Name}: {action.Description}",
+                        Importance = CalculateActionImportance(action),
+                        Tags = new List<string> { "short-term", "action", action.Status.ToString().ToLower(), action.Name.ToLower() },
+                        Timestamp = action.Timestamp
+                    };
+
+                    await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, default, "short-term");
+                    _logger.LogTrace("Action {Id} updated in vector search", action.Id);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to update action {Id} in vector search", action.Id);
+                }
+            });
+        }
     }
 
     public void UpdateStatus(AgentStatus status)
@@ -180,5 +284,47 @@ public class StateManager
         }
 
         return Task.FromResult(actions);
+    }
+
+    private double CalculateThoughtImportance(AgentThought thought)
+    {
+        // Base importance by type
+        double importance = thought.Type switch
+        {
+            ThoughtType.Observation => 0.3,
+            ThoughtType.Reasoning => 0.7,
+            ThoughtType.Reflection => 0.8,
+            _ => 0.5
+        };
+
+        // Increase importance for longer, more detailed thoughts
+        if (thought.Content.Length > 200)
+        {
+            importance += 0.1;
+        }
+
+        // Cap at 1.0
+        return Math.Min(1.0, importance);
+    }
+
+    private double CalculateActionImportance(AgentAction action)
+    {
+        // Base importance by status
+        double importance = action.Status switch
+        {
+            ActionStatus.Completed => 0.7,
+            ActionStatus.Failed => 0.6,
+            ActionStatus.Running => 0.4,
+            _ => 0.3
+        };
+
+        // Increase importance for actions with output (they produced results)
+        if (!string.IsNullOrEmpty(action.Output))
+        {
+            importance += 0.2;
+        }
+
+        // Cap at 1.0
+        return Math.Min(1.0, importance);
     }
 }

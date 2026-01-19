@@ -7,6 +7,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Extensions.Logging;
 using Polly;
 using System.Text.Json;
+using SharpToken;
 
 namespace ALAN.Agent.Services;
 
@@ -16,14 +17,16 @@ public class AutonomousAgent
     private const double IMPORTANCE_WEIGHT = 0.7;
     private const double RECENCY_WEIGHT = 0.3;
     private const int RECENCY_CUTOFF_DAYS = 7;
-    private const int MAX_MEMORY_CONTEXT_SIZE = 20;
+    private const int MAX_MEMORY_CONTEXT_SIZE = 20; // Max number of memory entries
+    private const int MAX_MEMORY_CONTEXT_TOKENS = 4000; // Max tokens for memory context (~3% of 128k context)
+    private const int MIN_MEMORY_CONTEXT_TOKENS = 500; // Minimum tokens to always include
     private const int MEMORY_REFRESH_INTERVAL_ITERATIONS = 10;
     private const int MEMORY_REFRESH_INTERVAL_HOURS = 1;
     private const double HIGH_IMPORTANCE_THRESHOLD = 0.8;
     private const int CONTENT_PREVIEW_MAX_LENGTH = 200;
 
     private readonly AIAgent _agent;
-    private readonly AgentThread _thread;
+    private AgentThread _thread;
     private readonly ILogger<AutonomousAgent> _logger;
     private readonly StateManager _stateManager;
     private readonly UsageTracker _usageTracker;
@@ -33,15 +36,18 @@ public class AutonomousAgent
     private readonly HumanInputHandler _humanInputHandler;
     private readonly IPromptService _promptService;
     private readonly ResiliencePipeline _resiliencePipeline;
+    private readonly MemoryAgent? _memoryAgent; // Optional: only available when Azure AI Search is configured
     private bool _isRunning;
     private bool _isPaused;
-    private string _receivedDirective = "Think about how to improve yourself.";
+    private const string DEFAULT_DIRECTIVE = "Think about how to improve yourself.";
+    private string _receivedDirective = DEFAULT_DIRECTIVE;
+    private string _currentDirective = DEFAULT_DIRECTIVE;
     private int _consecutiveThrottles = 0;
     private int _iterationCount = 0;
     private volatile List<MemoryEntry> _recentMemories = new();
     private DateTime _lastMemoryLoad = DateTime.MinValue;
-    private string _currentDirective = "";
-    private int _currentMemoryContextSize = MAX_MEMORY_CONTEXT_SIZE;
+    private int _currentMemoryContextTokens = MAX_MEMORY_CONTEXT_TOKENS;
+    private readonly GptEncoding _tokenEncoder;
 
     public AutonomousAgent(
         AIAgent agent,
@@ -52,7 +58,8 @@ public class AutonomousAgent
         IShortTermMemoryService shortTermMemory,
         BatchLearningService batchLearningService,
         HumanInputHandler humanInputHandler,
-        IPromptService promptService)
+        IPromptService promptService,
+        MemoryAgent? memoryAgent = null) // Optional: only available when Azure AI Search is configured
     {
         _agent = agent;
         _thread = agent.GetNewThread();
@@ -64,8 +71,19 @@ public class AutonomousAgent
         _batchLearningService = batchLearningService;
         _humanInputHandler = humanInputHandler;
         _promptService = promptService;
+        _memoryAgent = memoryAgent;
         _resiliencePipeline = ResiliencePolicy.CreateOpenAIRetryPipeline(logger);
         _humanInputHandler.SetAgent(this);
+        _tokenEncoder = GptEncoding.GetEncoding("cl100k_base"); // Used by gpt-4o-mini
+
+        if (_memoryAgent != null)
+        {
+            _logger.LogInformation("MemoryAgent is available - vector search enabled");
+        }
+        else
+        {
+            _logger.LogInformation("MemoryAgent not available - using traditional memory retrieval");
+        }
     }
 
     public void UpdatePrompt(string prompt)
@@ -187,6 +205,7 @@ public class AutonomousAgent
     /// <summary>
     /// Loads recent memories and learnings from long-term storage to provide context for decision-making.
     /// This ensures the agent builds on previous knowledge rather than starting from scratch each iteration.
+    /// Uses vector search when available for more relevant memory retrieval.
     /// </summary>
     internal async Task LoadRecentMemoriesAsync(CancellationToken cancellationToken)
     {
@@ -194,70 +213,14 @@ public class AutonomousAgent
         {
             _logger.LogInformation("Loading recent memories from long-term storage...");
 
-            // Optimize memory loading by fetching in parallel and limiting results
-            var learningsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Learning, maxResults: 10, cancellationToken);
-            var successesTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Success, maxResults: 10, cancellationToken);
-            var reflectionsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Reflection, maxResults: 5, cancellationToken);
-            var decisionsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Decision, maxResults: 10, cancellationToken);
-            var actionKeysTask = _shortTermMemory.GetKeysAsync("action:*", cancellationToken);
-
-            // Wait for all tasks to complete in parallel
-            await Task.WhenAll(learningsTask, successesTask, reflectionsTask, decisionsTask, actionKeysTask);
-
-            // Combine and sort by importance and recency with gradual decay
-            // Capacity = 10 (learnings) + 10 (successes) + 5 (reflections) + 10 (decisions) = 35
-            var allMemories = new List<MemoryEntry>(35);
-            allMemories.AddRange(learningsTask.Result);
-            allMemories.AddRange(successesTask.Result);
-            allMemories.AddRange(reflectionsTask.Result);
-            allMemories.AddRange(decisionsTask.Result);
-
-            // Sort and take top memories in a single pass
-            _recentMemories = allMemories
-                .OrderByDescending(m =>
-                    m.Importance * IMPORTANCE_WEIGHT +
-                    Math.Max(0, 1.0 - (DateTime.UtcNow - m.Timestamp).TotalDays / RECENCY_CUTOFF_DAYS) * RECENCY_WEIGHT
-                )
-                .Take(MAX_MEMORY_CONTEXT_SIZE)
-                .ToList();
-
-            // Load recent short-term actions in parallel (limit to 10 most recent)
-            var actionKeys = actionKeysTask.Result;
-            // Fetch all actions for the keys, then sort by Timestamp descending and take the 10 most recent
-            var actionTasks = actionKeys.Select(key => _shortTermMemory.GetAsync<AgentAction>(key, cancellationToken));
-            var allActions = await Task.WhenAll(actionTasks);
-            var shortTermActions = allActions
-                .Where(a => a != null)
-                .Select(a => a!)
-                .OrderByDescending(a => a.Timestamp)
-                .Take(10)
-                .ToList();
-
-            // Convert recent successful actions to memory entries efficiently
-            if (shortTermActions != null && shortTermActions.Count != 0)
+            // Use vector search if available and we have a current directive
+            if (_memoryAgent != null && !string.IsNullOrEmpty(_currentDirective))
             {
-                var recentActionMemories = shortTermActions
-                    .Where(a => a.Status == ActionStatus.Completed)
-                    .OrderByDescending(a => a.Timestamp)
-                    .Take(5)
-                    .Select(a => new MemoryEntry
-                    {
-                        Type = MemoryType.Success,
-                        Content = a.Output ?? a.Input,
-                        Summary = a.Output ?? a.Description ?? string.Empty,
-                        Timestamp = a.Timestamp,
-                        Importance = 0.5, // Lower importance for actions (will be consolidated later)
-                        Tags = ["short-term", "action", "recent"]
-                    })
-                    .ToList();
-
-                // Prepend short-term memories and limit to MAX_MEMORY_CONTEXT_SIZE
-                if (recentActionMemories.Count != 0)
-                {
-                    _recentMemories = [.. recentActionMemories
-                        .Concat(_recentMemories)
-                        .Take(MAX_MEMORY_CONTEXT_SIZE)];
-                }
+                await LoadMemoriesWithVectorSearchAsync(cancellationToken);
+            }
+            else
+            {
+                await LoadMemoriesTraditionalAsync(cancellationToken);
             }
 
             _lastMemoryLoad = DateTime.UtcNow;
@@ -274,6 +237,174 @@ public class AutonomousAgent
         {
             _logger.LogError(ex, "Failed to load recent memories, continuing with empty context");
             _recentMemories = [];
+        }
+    }
+
+    /// <summary>
+    /// Loads memories using vector search for semantic relevance to current directive,
+    /// combined with recent short-term actions for immediate context continuity.
+    /// </summary>
+    private async Task LoadMemoriesWithVectorSearchAsync(CancellationToken cancellationToken)
+    {
+        if (_memoryAgent == null) return;
+
+        _logger.LogInformation("Using vector search to find relevant memories for directive: {Directive}", _currentDirective);
+
+        // Reserve space for recent short-term actions (top 5 most recent)
+        const int shortTermReserve = 5;
+        int longTermMaxResults = Math.Max(1, MAX_MEMORY_CONTEXT_SIZE - shortTermReserve);
+
+        // Search for semantically relevant long-term memories
+        var vectorResults = await _memoryAgent.SearchRelevantMemoriesAsync(
+            _currentDirective,
+            maxResults: longTermMaxResults,
+            cancellationToken: cancellationToken);
+
+        // Check for similar completed tasks to avoid duplication
+        var similarTask = await _memoryAgent.FindSimilarCompletedTaskAsync(
+            _currentDirective,
+            cancellationToken: cancellationToken);
+
+        // Build long-term memory context from vector search
+        List<MemoryEntry> longTermMemories;
+        if (similarTask != null)
+        {
+            _logger.LogInformation("Found similar completed task (score: {Score}): {Summary}",
+                similarTask.Score, similarTask.Memory.Summary);
+
+            // Add the similar task at the top of the context
+            longTermMemories = [similarTask.Memory];
+            longTermMemories.AddRange(vectorResults
+                .Where(r => r.Memory.Id != similarTask.Memory.Id)
+                .Select(r => r.Memory)
+                .Take(longTermMaxResults - 1));
+        }
+        else
+        {
+            longTermMemories = vectorResults.Select(r => r.Memory).ToList();
+        }
+
+        // Load recent short-term actions for immediate context
+        var actionKeys = await _shortTermMemory.GetKeysAsync("action:*", cancellationToken);
+        var actionTasks = actionKeys.Select(key => _shortTermMemory.GetAsync<AgentAction>(key, cancellationToken));
+        var allActions = await Task.WhenAll(actionTasks);
+        var shortTermActions = allActions
+            .Where(a => a != null)
+            .Select(a => a!)
+            .OrderByDescending(a => a.Timestamp)
+            .Take(10) // Get more than needed to filter completed ones
+            .ToList();
+
+        // Convert recent successful actions to memory entries
+        var recentActionMemories = shortTermActions
+            .Where(a => a.Status == ActionStatus.Completed)
+            .Take(shortTermReserve)
+            .Select(a => new MemoryEntry
+            {
+                Type = MemoryType.Success,
+                Content = a.Output ?? a.Input,
+                Summary = a.Output ?? a.Description ?? string.Empty,
+                Timestamp = a.Timestamp,
+                Importance = 0.5,
+                Tags = ["short-term", "action", "recent"]
+            })
+            .ToList();
+
+        // Combine: recent short-term actions first (for immediate context), 
+        // then semantically relevant long-term memories
+        if (recentActionMemories.Count != 0)
+        {
+            _recentMemories = [.. recentActionMemories, .. longTermMemories];
+            _logger.LogInformation("Combined {ShortTerm} recent actions with {LongTerm} relevant long-term memories",
+                recentActionMemories.Count, longTermMemories.Count);
+        }
+        else
+        {
+            _recentMemories = longTermMemories;
+            _logger.LogInformation("No recent short-term actions, using {Count} relevant long-term memories",
+                longTermMemories.Count);
+        }
+
+        // Evaluate and log search quality for long-term memories
+        var evaluation = await _memoryAgent.EvaluateSearchQualityAsync(
+            _currentDirective,
+            vectorResults,
+            cancellationToken: cancellationToken);
+
+        _logger.LogInformation("Vector search quality: {Precision:P2} precision, avg score {AvgScore:F3}",
+            evaluation.Precision, evaluation.AverageScore);
+    }
+
+    /// <summary>
+    /// Traditional memory loading using type-based queries and importance/recency scoring.
+    /// Used as fallback when vector search is not available.
+    /// </summary>
+    private async Task LoadMemoriesTraditionalAsync(CancellationToken cancellationToken)
+    {
+        // Optimize memory loading by fetching in parallel and limiting results
+        var learningsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Learning, maxResults: 10, cancellationToken);
+        var successesTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Success, maxResults: 10, cancellationToken);
+        var reflectionsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Reflection, maxResults: 5, cancellationToken);
+        var decisionsTask = _longTermMemory.GetMemoriesByTypeAsync(MemoryType.Decision, maxResults: 10, cancellationToken);
+        var actionKeysTask = _shortTermMemory.GetKeysAsync("action:*", cancellationToken);
+
+        // Wait for all tasks to complete in parallel
+        await Task.WhenAll(learningsTask, successesTask, reflectionsTask, decisionsTask, actionKeysTask);
+
+        // Combine and sort by importance and recency with gradual decay
+        // Capacity = 10 (learnings) + 10 (successes) + 5 (reflections) + 10 (decisions) = 35
+        var allMemories = new List<MemoryEntry>(35);
+        allMemories.AddRange(learningsTask.Result);
+        allMemories.AddRange(successesTask.Result);
+        allMemories.AddRange(reflectionsTask.Result);
+        allMemories.AddRange(decisionsTask.Result);
+
+        // Sort and take top memories in a single pass
+        _recentMemories = allMemories
+            .OrderByDescending(m =>
+                m.Importance * IMPORTANCE_WEIGHT +
+                Math.Max(0, 1.0 - (DateTime.UtcNow - m.Timestamp).TotalDays / RECENCY_CUTOFF_DAYS) * RECENCY_WEIGHT
+            )
+            .Take(MAX_MEMORY_CONTEXT_SIZE)
+            .ToList();
+
+        // Load recent short-term actions in parallel (limit to 10 most recent)
+        var actionKeys = actionKeysTask.Result;
+        // Fetch all actions for the keys, then sort by Timestamp descending and take the 10 most recent
+        var actionTasks = actionKeys.Select(key => _shortTermMemory.GetAsync<AgentAction>(key, cancellationToken));
+        var allActions = await Task.WhenAll(actionTasks);
+        var shortTermActions = allActions
+            .Where(a => a != null)
+            .Select(a => a!)
+            .OrderByDescending(a => a.Timestamp)
+            .Take(10)
+            .ToList();
+
+        // Convert recent successful actions to memory entries efficiently
+        if (shortTermActions != null && shortTermActions.Count != 0)
+        {
+            var recentActionMemories = shortTermActions
+                .Where(a => a.Status == ActionStatus.Completed)
+                .OrderByDescending(a => a.Timestamp)
+                .Take(5)
+                .Select(a => new MemoryEntry
+                {
+                    Type = MemoryType.Success,
+                    Content = a.Output ?? a.Input,
+                    Summary = a.Output ?? a.Description ?? string.Empty,
+                    Timestamp = a.Timestamp,
+                    Importance = 0.5, // Lower importance for actions (will be consolidated later)
+                    Tags = ["short-term", "action", "recent"]
+                })
+                .ToList();
+
+            // Prepend short-term memories and limit to MAX_MEMORY_CONTEXT_SIZE
+            if (recentActionMemories.Count != 0)
+            {
+                _recentMemories = [.. recentActionMemories
+                        .Concat(_recentMemories)
+                        .Take(MAX_MEMORY_CONTEXT_SIZE)];
+            }
         }
     }
 
@@ -300,20 +431,19 @@ public class AutonomousAgent
         }
 
         // Get AI response - retry with reduced context if needed
-        const int minMemoryContextSize = 5;
         int retryAttempt = 0;
-        const int maxRetries = 3;
-        
+        const int maxRetries = 4;
+
         while (retryAttempt <= maxRetries)
         {
             var prompt = _promptService.RenderTemplate("agent-thinking", new
             {
                 directive = _receivedDirective,
                 memoryCount = _recentMemories.Count,
-                memoryContext = BuildMemoryContext(_currentMemoryContextSize)
+                memoryContext = BuildMemoryContext(_currentMemoryContextTokens)
             });
             _logger.LogTrace("Agent prompt: {Prompt}", prompt.Length > 500 ? string.Concat(prompt.AsSpan(0, 500), "...") : prompt);
-            
+
             try
             {
                 var result = await _resiliencePipeline.ExecuteAsync(async ct =>
@@ -321,11 +451,11 @@ public class AutonomousAgent
                     cancellationToken);
                 var response = result.Text ?? result.ToString();
 
-                // Success - restore full context size for next iteration
-                if (_currentMemoryContextSize < MAX_MEMORY_CONTEXT_SIZE)
+                // Success - restore full context budget for next iteration
+                if (_currentMemoryContextTokens < MAX_MEMORY_CONTEXT_TOKENS)
                 {
-                    _logger.LogInformation("Context length issue resolved. Restoring memory context to {Size}", MAX_MEMORY_CONTEXT_SIZE);
-                    _currentMemoryContextSize = MAX_MEMORY_CONTEXT_SIZE;
+                    _logger.LogInformation("************************ Context length issue resolved. Restoring memory context to {Tokens} tokens", MAX_MEMORY_CONTEXT_TOKENS);
+                    _currentMemoryContextTokens = MAX_MEMORY_CONTEXT_TOKENS;
                 }
 
                 // Extract tool call information (minimal metadata)
@@ -357,30 +487,30 @@ public class AutonomousAgent
             catch (System.ClientModel.ClientResultException clientEx) when (clientEx.Status == 400 && clientEx.Message.Contains("context_length_exceeded"))
             {
                 retryAttempt++;
-                
-                if (_currentMemoryContextSize > minMemoryContextSize && retryAttempt <= maxRetries)
+                if (retryAttempt == 1)
                 {
-                    // Reduce memory context size by half
-                    var newSize = Math.Max(minMemoryContextSize, _currentMemoryContextSize / 2);
-                    _logger.LogWarning("Context length exceeded ({CurrentSize} memories). Reducing to {NewSize} and retrying (attempt {Attempt}/{MaxRetries})",
-                        _currentMemoryContextSize, newSize, retryAttempt, maxRetries);
-                    _currentMemoryContextSize = newSize;
+                    // first try with an empty thread
+                    _thread = _agent.GetNewThread();
+
+                    _logger.LogWarning("************************ Context length exceeded ({CurrentTokens} tokens). Retrying with a fresh thread (attempt {Attempt}/{MaxRetries})",
+                        _currentMemoryContextTokens, retryAttempt, maxRetries);
+                    continue;
+                }
+
+
+                if (_currentMemoryContextTokens > MIN_MEMORY_CONTEXT_TOKENS && retryAttempt <= maxRetries)
+                {
+                    // Reduce memory context token budget by half
+                    var newTokens = Math.Max(MIN_MEMORY_CONTEXT_TOKENS, _currentMemoryContextTokens / 2);
+                    _logger.LogWarning("************************ Context length exceeded ({CurrentTokens} tokens). Reducing to {NewTokens} tokens and retrying (attempt {Attempt}/{MaxRetries})",
+                        _currentMemoryContextTokens, newTokens, retryAttempt, maxRetries);
+                    _currentMemoryContextTokens = newTokens;
                     continue; // Retry with reduced context
                 }
-                
-                _logger.LogError(clientEx, "Context length exceeded even with minimal memory context ({Size}). Status: {Status}",
-                    _currentMemoryContextSize, clientEx.Status);
 
-                // Store context overflow errors for learning
-                var errorMemory = new MemoryEntry
-                {
-                    Type = MemoryType.Error,
-                    Content = $"Context length exceeded with {_currentMemoryContextSize} memories. Model limit reached.",
-                    Summary = "Context overflow - need to reduce memory or response length",
-                    Importance = 0.8,
-                    Tags = ["error", "context-overflow", "azure-openai"]
-                };
-                await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
+                _logger.LogError(clientEx, "************************ Context length exceeded even with minimal memory context ({Tokens} tokens). Status: {Status}",
+                    _currentMemoryContextTokens, clientEx.Status);
+
                 break; // Cannot retry further
             }
             catch (System.ClientModel.ClientResultException clientEx)
@@ -388,33 +518,12 @@ public class AutonomousAgent
                 _logger.LogError(clientEx, "Azure OpenAI client error during thinking process. Status: {Status}",
                     clientEx.Status);
 
-                // Store API errors for learning
-                var errorMemory = new MemoryEntry
-                {
-                    Type = MemoryType.Error,
-                    Content = $"Azure OpenAI API error (Status {clientEx.Status}): {clientEx.Message}",
-                    Summary = "API communication error",
-                    Importance = 0.6,
-                    Tags = ["error", "api", "azure-openai"]
-                };
-                await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
                 break; // Don't retry for other errors
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during thinking process");
 
-                // Store critical errors directly to long-term memory for persistence
-                // (errors are important enough to skip short-term storage)
-                var errorMemory = new MemoryEntry
-                {
-                    Type = MemoryType.Error,
-                    Content = $"Error during thinking: {ex.Message}",
-                    Summary = "Agent error",
-                    Importance = 0.7,
-                    Tags = ["error", "system"]
-                };
-                await _longTermMemory.StoreMemoryAsync(errorMemory, cancellationToken);
                 break; // Don't retry on general errors
             }
         }
@@ -455,22 +564,72 @@ public class AutonomousAgent
                     };
 
                     _stateManager.AddAction(action);
+                    AgentRunResponse? result = null;
                     try
                     {
                         _stateManager.UpdateGoal(actionPlan.Goal ?? "General exploration");
 
-                        var prompt = _promptService.RenderTemplate("action-execution", new
-                        {
-                            goal = actionPlan.Goal ?? "General exploration",
-                            reasoning = singlePlan.Reasoning,
-                            action = actionPlan.Action,
-                            extra = actionPlan.Extra
-                        });
-                        // Simulate action execution
-                        var result = await _resiliencePipeline.ExecuteAsync(async ct =>
-                            await _agent.RunAsync(prompt, _thread, cancellationToken: ct),
-                            cancellationToken);
+                        // Get AI response - retry with reduced context if needed
+                        int retryAttempt = 0;
+                        const int maxRetries = 3;
+                        var currentContextTokens = MAX_MEMORY_CONTEXT_TOKENS;
 
+                        while (retryAttempt <= maxRetries)
+                        {
+                            try
+                            {
+                                var reasoning = singlePlan.Reasoning;
+                                var extra = actionPlan.Extra;
+                                if (retryAttempt > 0)
+                                {
+                                    _logger.LogInformation("Retrying action execution with reduced context ({Attempt}/{MaxRetries})",
+                                        retryAttempt, maxRetries);
+                                    extra = TruncateToTokenLimit(
+                                            actionPlan.Extra ?? string.Empty,
+                                            currentContextTokens / 2);
+                                    reasoning = TruncateToTokenLimit(
+                                            singlePlan.Reasoning ?? string.Empty,
+                                            currentContextTokens / 2);
+
+                                }
+                                var prompt = _promptService.RenderTemplate("action-execution", new
+                                {
+                                    goal = actionPlan.Goal ?? "General exploration",
+                                    reasoning = reasoning,
+                                    action = actionPlan.Action,
+                                    extra = extra
+                                });
+
+                                result = await _resiliencePipeline.ExecuteAsync(async ct =>
+                                   await _agent.RunAsync(prompt, _thread, cancellationToken: ct),
+                                   cancellationToken);
+                                break; // Success - exit retry loop
+                            }
+                            catch (System.ClientModel.ClientResultException clientEx) when (clientEx.Status == 400 && clientEx.Message.Contains("context_length_exceeded"))
+                            {
+                                retryAttempt++;
+
+                                if (_currentMemoryContextTokens > MIN_MEMORY_CONTEXT_TOKENS && retryAttempt <= maxRetries)
+                                {
+                                    // Reduce memory context token budget by half
+                                    var newTokens = Math.Max(MIN_MEMORY_CONTEXT_TOKENS, _currentMemoryContextTokens / 2);
+                                    _logger.LogWarning("************************ Context length exceeded ({CurrentTokens} tokens). Reducing to {NewTokens} tokens and retrying (attempt {Attempt}/{MaxRetries})",
+                                        _currentMemoryContextTokens, newTokens, retryAttempt, maxRetries);
+                                    _currentMemoryContextTokens = newTokens;
+                                    continue; // Retry with reduced context
+                                }
+
+                                _logger.LogError(clientEx, "************************ Context length exceeded even with minimal memory context ({Tokens} tokens). Status: {Status}",
+                                    _currentMemoryContextTokens, clientEx.Status);
+
+                                throw;
+                            }
+                        }
+
+                        if (result == null)
+                        {
+                            throw new Exception("Failed to get a response from the agent for action execution.");
+                        }
                         // Extract tool calls from action execution
                         var toolCalls = ExtractToolCalls(result);
                         if (toolCalls != null && toolCalls.Count > 0)
@@ -620,8 +779,9 @@ public class AutonomousAgent
     /// <summary>
     /// Builds a formatted string containing relevant memory context for the current iteration.
     /// This provides the agent with accumulated knowledge from previous iterations.
+    /// Uses token-based limiting to prevent context overflow while maximizing information density.
     /// </summary>
-    internal string BuildMemoryContext(int maxMemories = MAX_MEMORY_CONTEXT_SIZE)
+    internal string BuildMemoryContext(int maxTokens = MAX_MEMORY_CONTEXT_TOKENS)
     {
         if (!_recentMemories.Any())
         {
@@ -629,12 +789,10 @@ public class AutonomousAgent
         }
 
         var context = new System.Text.StringBuilder();
-        
-        // Limit the total number of memories if context size needs to be reduced
-        var memoriesToUse = _recentMemories.Take(maxMemories).ToList();
+        int currentTokens = 0;
 
         // Group memories by type for better organization
-        var groupedMemories = memoriesToUse.GroupBy(m => m.Type).OrderByDescending(g => g.Key switch
+        var groupedMemories = _recentMemories.GroupBy(m => m.Type).OrderByDescending(g => g.Key switch
         {
             MemoryType.Learning => 5,
             MemoryType.Reflection => 4,
@@ -645,28 +803,113 @@ public class AutonomousAgent
 
         foreach (var group in groupedMemories)
         {
+            // Try adding the group header
             var entryWord = group.Count() == 1 ? "entry" : "entries";
-            context.AppendLine($"\n### {group.Key} ({group.Count()} {entryWord}):");
+            var groupHeader = $"\n### {group.Key} ({group.Count()} {entryWord}):\n";
+            var headerTokens = _tokenEncoder.CountTokens(groupHeader);
 
+            // If even the header would exceed the budget, stop
+            if (currentTokens + headerTokens > maxTokens)
+            {
+                _logger.LogDebug("Reached token limit ({Current}/{Max}) before adding {Type} group",
+                    currentTokens, maxTokens, group.Key);
+                break;
+            }
+
+            // Reserve space for the header
+            var tempContext = new System.Text.StringBuilder();
+            int groupTokens = headerTokens;
+
+            // Process memories in this group by importance, limiting to top 5
             foreach (var memory in group.OrderByDescending(m => m.Importance).Take(5))
             {
                 var age = (DateTime.UtcNow - memory.Timestamp).TotalHours;
                 var ageStr = age < 24 ? $"{age:F0}h ago" : $"{age / 24:F0}d ago";
 
-                context.AppendLine($"- [{ageStr}, importance: {memory.Importance:F2}] {memory.Summary}");
+                var memoryLine = $"- [{ageStr}, importance: {memory.Importance:F2}] {memory.Summary}\n";
+                var memoryLineTokens = _tokenEncoder.CountTokens(memoryLine);
 
-                // Include full content for high-importance items
-                if (memory.Importance >= HIGH_IMPORTANCE_THRESHOLD && !string.IsNullOrEmpty(memory.Content) && memory.Content != memory.Summary)
+                // Check if we can include full content for high-importance items
+                string? detailsLine = null;
+                int detailsTokens = 0;
+                if (memory.Importance >= HIGH_IMPORTANCE_THRESHOLD &&
+                    !string.IsNullOrEmpty(memory.Content) &&
+                    memory.Content != memory.Summary)
                 {
                     var contentPreview = memory.Content.Length > CONTENT_PREVIEW_MAX_LENGTH
                         ? memory.Content.Substring(0, CONTENT_PREVIEW_MAX_LENGTH) + "..."
                         : memory.Content;
-                    context.AppendLine($"  Details: {contentPreview}");
+                    detailsLine = $"  Details: {contentPreview}\n";
+                    detailsTokens = _tokenEncoder.CountTokens(detailsLine);
                 }
+
+                // Calculate total tokens needed for this memory entry
+                var totalMemoryTokens = memoryLineTokens + detailsTokens;
+
+                // Check if adding this memory would exceed the budget
+                if (currentTokens + groupTokens + totalMemoryTokens > maxTokens)
+                {
+                    // If we haven't added any memories to this group yet, try to add at least a truncated version
+                    if (tempContext.Length == 0)
+                    {
+                        // Truncate the summary to fit within budget
+                        var ellipsisTokens = _tokenEncoder.CountTokens($"- [{ageStr}, importance: {memory.Importance:F2}] ...\n");
+                        var availableTokens = maxTokens - currentTokens - groupTokens - ellipsisTokens;
+                        if (availableTokens > 20) // Minimum viable summary
+                        {
+                            var truncatedSummary = TruncateToTokenLimit(memory.Summary, availableTokens);
+                            memoryLine = $"- [{ageStr}, importance: {memory.Importance:F2}] {truncatedSummary}...\n";
+                            groupTokens += _tokenEncoder.CountTokens(memoryLine);
+                            tempContext.Append(memoryLine);
+                            _logger.LogDebug("Truncated memory summary to fit within token budget");
+                        }
+                    }
+                    _logger.LogDebug("Reached token limit ({Current}/{Max}) while adding {Type} memories",
+                        currentTokens + groupTokens, maxTokens, group.Key);
+                    break;
+                }
+
+                // Add the memory to the group
+                tempContext.Append(memoryLine);
+                groupTokens += memoryLineTokens;
+
+                // Add details if available and included
+                if (detailsLine != null)
+                {
+                    tempContext.Append(detailsLine);
+                    groupTokens += detailsTokens;
+                }
+            }
+
+            // If we added any memories to this group, commit it to the main context
+            if (tempContext.Length > 0)
+            {
+                context.Append(groupHeader);
+                context.Append(tempContext);
+                currentTokens += groupTokens;
             }
         }
 
-        return context.ToString();
+        var finalContext = context.ToString();
+        var finalTokens = _tokenEncoder.CountTokens(finalContext);
+        _logger.LogDebug("Built memory context with {Tokens} tokens (limit: {MaxTokens})", finalTokens, maxTokens);
+
+        return finalContext;
+    }
+
+    /// <summary>
+    /// Truncates text to fit within a specified token limit.
+    /// </summary>
+    private string TruncateToTokenLimit(string text, int maxTokens)
+    {
+        if (string.IsNullOrEmpty(text)) return text;
+
+        var tokens = _tokenEncoder.Encode(text);
+        if (tokens.Count <= maxTokens) return text;
+
+        // Take only the tokens that fit and decode back to text
+        // ToArray() is more efficient than ToList() for this single-use scenario
+        return _tokenEncoder.Decode(tokens.Take(maxTokens).ToArray());
     }
 
     public void Stop()

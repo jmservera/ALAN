@@ -12,6 +12,7 @@ services:
     docker:
       path: ../../Dockerfile.agent
       context: ../../
+      remoteBuild: true
 
   chatapi:
     project: ./src/ALAN.ChatApi
@@ -20,6 +21,8 @@ services:
     docker:
       path: ../../Dockerfile.chatapi
       context: ../../
+      remoteBuild: true
+
   web:
     project: ./src/ALAN.Web
     language: js
@@ -27,6 +30,7 @@ services:
     docker:
       path: ../../Dockerfile.web
       context: ../../
+      remoteBuild: true
 
 hooks:
   preprovision:

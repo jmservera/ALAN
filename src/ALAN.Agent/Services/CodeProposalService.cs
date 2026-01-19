@@ -14,13 +14,16 @@ public class CodeProposalService
     private readonly ConcurrentDictionary<string, CodeProposal> _proposals = new();
     private readonly ILongTermMemoryService _longTermMemory;
     private readonly ILogger<CodeProposalService> _logger;
+    private readonly MemoryAgent? _memoryAgent;
 
     public CodeProposalService(
         ILongTermMemoryService longTermMemory,
-        ILogger<CodeProposalService> logger)
+        ILogger<CodeProposalService> logger,
+        MemoryAgent? memoryAgent = null)
     {
         _longTermMemory = longTermMemory;
         _logger = logger;
+        _memoryAgent = memoryAgent;
     }
 
     /// <summary>
@@ -123,6 +126,12 @@ public class CodeProposalService
 
         await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
 
+        // Store in vector memory for semantic search
+        if (_memoryAgent != null)
+        {
+            await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken);
+        }
+
         return true;
     }
 
@@ -164,6 +173,12 @@ public class CodeProposalService
         };
 
         await _longTermMemory.StoreMemoryAsync(memory, cancellationToken);
+
+        // Store in vector memory for semantic search
+        if (_memoryAgent != null)
+        {
+            await _memoryAgent.MigrateMemoryToVectorSearchAsync(memory, cancellationToken);
+        }
 
         return true;
     }

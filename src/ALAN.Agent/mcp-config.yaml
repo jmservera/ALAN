@@ -1,12 +1,35 @@
 mcp:
   servers:
+    # GitHub MCP Server - provides access to GitHub repositories, issues, PRs, etc.
+    # Requires GITHUB_PERSONAL_ACCESS_TOKEN environment variable
     github:
-      type: http
-      url: https://api.githubcopilot.com/mcp/
-      pat: $GITHUB_MCP_PAT
-      description: GitHub MCP Server
+      command: npx
+      args:
+        - -y
+        - "@modelcontextprotocol/server-github"
+      env:
+        GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PERSONAL_ACCESS_TOKEN}
+      description: GitHub MCP Server for repository operations
 
-    microsoft-learn:
-      type: http
-      url: https://learn.microsoft.com/api/mcp
-      description: Microsoft Learn MCP Server
+    # Filesystem MCP Server - provides access to local filesystem
+    # Requires allowed paths to be specified
+    filesystem:
+      command: npx
+      args:
+        - -y
+        - "@modelcontextprotocol/server-filesystem"
+        - "/tmp"
+        - "${HOME}"
+      description: Filesystem MCP Server for local file operations
+
+    # HTTP-based servers (existing)
+    # github-http:
+    #   type: http
+    #   url: https://api.githubcopilot.com/mcp/
+    #   pat: ${GITHUB_MCP_PAT}
+    #   description: GitHub MCP Server (HTTP)
+
+    # microsoft-learn:
+    #   type: http
+    #   url: https://learn.microsoft.com/api/mcp
+    #   description: Microsoft Learn MCP Server

@@ -115,22 +115,41 @@ The new server's tools will be automatically discovered and made available to th
 
 ## Current Implementation Status
 
-**Note**: The MCP integration is prepared for Agent Framework's MCP support. The current implementation:
+The MCP integration is fully functional with both transport types:
 
 - ✅ Loads MCP configuration from YAML
-- ✅ Parses server definitions
-- ✅ Logs configuration details
-- ⏳ Awaiting Agent Framework MCP API availability for full integration
+- ✅ Parses server definitions (HTTP and stdio)
+- ✅ Stdio transport support (npx, command-based servers)
+- ✅ HTTP transport support (remote MCP servers)
+- ✅ Environment variable resolution (`${VAR_NAME}` and `$VAR_NAME` syntax)
+- ✅ Process lifecycle management (automatic cleanup on shutdown)
+- ✅ Tool discovery and registration with AI agent
+- ✅ Full integration with Semantic Kernel agent
 
-When Agent Framework's MCP support becomes available, the `McpConfigurationService` will:
-1. Connect to configured MCP servers
-2. Discover available tools
-3. Register tools with the AI agent
-4. Enable the agent to invoke MCP tools
+### Supported Transports
+
+#### Stdio Transport (Recommended for npx/local servers)
+```yaml
+github:
+  command: npx
+  args:
+    - -y
+    - "@modelcontextprotocol/server-github"
+  env:
+    GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PERSONAL_ACCESS_TOKEN}
+```
+
+#### HTTP Transport (For remote servers)
+```yaml
+remote-server:
+  type: http
+  url: https://api.example.com/mcp
+  pat: ${API_TOKEN}
+```
 
 ## Usage in Agent
 
-Once fully integrated, the agent will automatically have access to MCP tools:
+The agent automatically has access to all configured MCP tools:
 
 ```csharp
 // The agent can naturally use MCP tools in its reasoning
@@ -145,6 +164,7 @@ Once fully integrated, the agent will automatically have access to MCP tools:
 - Never commit tokens to source control
 - Use Azure Key Vault for production deployments
 - Rotate tokens regularly
+- Sensitive env vars (containing TOKEN, KEY, SECRET) are masked in logs
 
 ### Domain Restrictions
 For fetch-based servers, restrict allowed domains:
@@ -155,9 +175,11 @@ env:
 ```
 
 ### Command Execution
-- MCP servers execute as separate processes
+- MCP servers execute as separate processes managed by `McpConfigurationService`
+- Processes are automatically terminated when the agent shuts down
 - Validate server sources before adding to configuration
 - Monitor resource usage of MCP server processes
+- stderr output from MCP processes is logged for debugging
 
 ## Troubleshooting
 

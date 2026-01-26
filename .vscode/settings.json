@@ -40,6 +40,8 @@
   "problems.autoReveal": true,
   "jest.rootPath": "src/ALAN.Web",
   "chat.tools.terminal.autoApprove": {
-    "bd": true
+    "bd": true,
+    "dotnet test": true,
+    "git add": true
   }
 }

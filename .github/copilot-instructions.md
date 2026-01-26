@@ -180,16 +180,32 @@ The solution uses VS Code's multi-target debugging. Configuration files:
 
 1. `AgentHostedService.ExecuteAsync()` starts the service
 2. `AutonomousAgent.RunAsync()` runs the infinite loop
-3. **`LoadRecentMemoriesAsync()` loads accumulated knowledge** from long-term storage at startup
-4. `UsageTracker.CanExecuteLoop()` checks daily limits
-5. `ThinkAndActAsync()` generates thoughts and actions **with memory context** from previous iterations
-6. `StateManager` stores thoughts/actions to **short-term memory only** (8-hour TTL)
-7. **Memory refresh** occurs every 10 iterations or hourly to keep context current
-8. `MemoryConsolidationService.ConsolidateShortTermMemoryAsync()` runs every 6 hours to:
+3. **`TryRestorePreviousStateAsync()` attempts to restore previous execution state** from short-term memory at startup
+4. **`LoadRecentMemoriesAsync()` loads accumulated knowledge** from long-term storage at startup
+5. `UsageTracker.CanExecuteLoop()` checks daily limits
+6. `ThinkAndActAsync()` generates thoughts and actions **with memory context** from previous iterations
+7. `StateManager` stores thoughts/actions to **short-term memory only** (8-hour TTL)
+8. **Memory refresh** occurs every 10 iterations or hourly to keep context current
+9. `MemoryConsolidationService.ConsolidateShortTermMemoryAsync()` runs every 6 hours to:
    - Read thoughts and actions from short-term memory
    - Evaluate importance of each item
    - Promote important items (importance ≥ 0.5) to long-term memory with "consolidated" tag
    - Extract learnings from consolidated memories
+
+### State Restoration on Startup
+
+The agent automatically resumes from previous state when restarted:
+
+- **State Source**: Reads `agent:current-state` from short-term memory (1-hour TTL)
+- **Age Validation**: Rejects state older than 24 hours (configurable via `STATE_MAX_AGE_HOURS`)
+- **Error State Handling**: Ignores previous states with `Error` status to ensure clean restart
+- **Restoration Process**: Restores `CurrentGoal` and `CurrentPrompt` if state is valid
+- **Resilience**: Gracefully handles corrupt or missing state by starting fresh
+- **Logging**: Detailed logs for restoration success, rejection reasons, and failures
+
+Configuration constant in `AutonomousAgent.cs`:
+
+- `STATE_MAX_AGE_HOURS = 24` - Maximum age of state to restore (hours)
 
 ### Memory Context in Agent Loop
 
@@ -238,6 +254,15 @@ Configuration constants in `AutonomousAgent.cs`:
 → Review memory refresh logic (every 10 iterations or hourly)
 → Check that `BuildMemoryContext()` is formatting memories correctly
 
+**Agent not resuming from previous state:**
+→ Check if state exists in short-term memory (`agent:current-state` key)
+→ Verify state age is within 24-hour threshold (check `STATE_MAX_AGE_HOURS`)
+→ Ensure previous state didn't have `Error` status (these are intentionally skipped)
+→ Review logs for "Restored previous state" or rejection reasons
+→ Check short-term memory TTL (1 hour for state) hasn't expired
+
+**SignalR connection failed:**
+→ Falls back to polling mode automatically (see `Index.cshtml`)
 **React app connection errors:**
 → Verify ALAN.ChatApi is running on port 5001
 → Check `VITE_API_URL` in `.env` file
@@ -763,6 +788,7 @@ For detailed infrastructure documentation, see `infra/README.md`.
 ## Quick Reference
 
 - **Agent Loop Interval**: 5 seconds (configurable in `AutonomousAgent`)
+- **State Restoration**: Automatically attempts to resume from previous state (max 24 hours old)
 - **Memory Refresh**: Every 10 iterations OR every 1 hour (whichever comes first)
 - **Memory Context Size**: Top 20 most relevant memories (importance × 0.7 + recency × 0.3)
 - **Cost Limits**: See `UsageTracker` (default: 4000 loops/day, 8M tokens/day)

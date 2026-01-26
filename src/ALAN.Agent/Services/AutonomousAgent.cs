@@ -21,6 +21,9 @@ public class AutonomousAgent
     private const int MEMORY_REFRESH_INTERVAL_HOURS = 1;
     private const double HIGH_IMPORTANCE_THRESHOLD = 0.8;
     private const int CONTENT_PREVIEW_MAX_LENGTH = 200;
+    
+    // State restoration configuration
+    private const int STATE_MAX_AGE_HOURS = 24;
 
     private readonly AIAgent _agent;
     private readonly AgentThread _thread;
@@ -89,10 +92,75 @@ public class AutonomousAgent
         _logger.LogInformation("Agent resumed");
     }
 
+    /// <summary>
+    /// Attempts to restore the agent's previous state from short-term memory.
+    /// Returns true if state was successfully restored, false otherwise.
+    /// </summary>
+    internal async Task<bool> TryRestorePreviousStateAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Checking for previous agent state...");
+            
+            var previousState = await _shortTermMemory.GetAsync<AgentState>("agent:current-state", cancellationToken);
+            
+            if (previousState == null)
+            {
+                _logger.LogInformation("No previous state found. Starting fresh.");
+                return false;
+            }
+
+            // Validate state age
+            var stateAge = DateTime.UtcNow - previousState.LastUpdated;
+            if (stateAge.TotalHours > STATE_MAX_AGE_HOURS)
+            {
+                _logger.LogWarning(
+                    "Previous state is too old ({Hours:F1} hours). Starting fresh. (max age: {MaxHours} hours)",
+                    stateAge.TotalHours,
+                    STATE_MAX_AGE_HOURS);
+                return false;
+            }
+
+            // Don't restore from error states
+            if (previousState.Status == AgentStatus.Error)
+            {
+                _logger.LogWarning("Previous state had error status. Starting fresh.");
+                return false;
+            }
+
+            // Restore state
+            if (!string.IsNullOrEmpty(previousState.CurrentGoal))
+            {
+                _stateManager.UpdateGoal(previousState.CurrentGoal);
+            }
+
+            if (!string.IsNullOrEmpty(previousState.CurrentPrompt))
+            {
+                _receivedDirective = previousState.CurrentPrompt;
+                _stateManager.UpdatePrompt(previousState.CurrentPrompt);
+            }
+
+            _logger.LogInformation(
+                "Restored previous state from {Hours:F1} hours ago. Goal: {Goal}",
+                stateAge.TotalHours,
+                previousState.CurrentGoal);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to restore previous state. Starting fresh.");
+            return false;
+        }
+    }
+
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         _isRunning = true;
         _logger.LogInformation("Autonomous agent started");
+
+        // Try to restore previous state before loading memories
+        await TryRestorePreviousStateAsync(cancellationToken);
 
         // Load initial memories from long-term storage
         await LoadRecentMemoriesAsync(cancellationToken);

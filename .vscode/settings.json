@@ -38,5 +38,8 @@
 
   // Exclude node_modules from problems view
   "problems.autoReveal": true,
-  "jest.rootPath": "src/ALAN.Web"
+  "jest.rootPath": "src/ALAN.Web",
+  "chat.tools.terminal.autoApprove": {
+    "bd": true
+  }
 }
